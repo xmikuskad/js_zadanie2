@@ -30,7 +30,7 @@ class User{
     this.password = pass;
     this.name = name
     this.score= score;
-    this.lvl=lvl;
+    this.level=lvl;
   }
 }
 
@@ -38,7 +38,7 @@ class MySession{
   constructor(user,score,lvl,sessionID) {
     this.user = user;
     this.score = score;
-    this.lvl = lvl;
+    this.level = lvl;
     this.sessionID = sessionID;
   }
 }
@@ -75,7 +75,7 @@ wss.on('connection', (ws,req) => {
 
   ws.on('message', message => {
     console.log(`Received message => ${message}`)
-    console.log(getSessionID(req.headers.cookie));
+    //console.log(getSessionID(req.headers.cookie));
     var game = getGame(getSessionID(req.headers.cookie))
     if(!game.started)
     {
@@ -97,14 +97,23 @@ wss.on('connection', (ws,req) => {
 
 
 wss.on('testik', (data) => {
+
+  /*for(var j=0;j<users.length;j++)
+  {
+    console.log(users[j].email + " score:"+users[j].score)
+  }*/
+
   for(var i=0;i<users_conn.length;i++)
   {
     var game = getGame(users_conn[i][1]);
     if(game!=null && game.started) {
       if(game.session.user)
         console.log("Connected " + game.session.user.email);
-      game.housenka.pohybHousenky();
-      users_conn[i][0].send(JSON.stringify(game.housenka.getArray()));
+      var ended = game.housenka.pohybHousenky();
+      var scoreInfo = updateScore(game,ended);
+      console.log(scoreInfo);
+      users_conn[i][0].send('area '+scoreInfo+' '+JSON.stringify(game.housenka.getArray()));
+      //game.session.user.score++;
     }
   }
 })
@@ -113,6 +122,7 @@ wss.on('testik', (data) => {
 setInterval(function(){
   wss.emit('testik','MY MESSAGE');
 }, 250);
+
 
 /**
  * Express sessions
@@ -142,9 +152,9 @@ app.get('/index', function(req, res) {
 app.get('/', function(req, res) {
 
   req.session.cookie.expires = true
-  req.session.cookie.maxAge = 360000;
-  var id = req.sessionID;
-  console.log("EXPRESS "+id);
+  req.session.cookie.maxAge = 360000; //po 1 hodine vyprsi session ? TODO
+  //var id = req.sessionID;
+  //console.log("EXPRESS "+id);
 
 
   var is_added = false;
@@ -157,11 +167,11 @@ app.get('/', function(req, res) {
   }
   if(!is_added)
   {
-    sessions.push(new MySession(null,0,0,req.sessionID));
+    sessions.push(new MySession(null,0,1,req.sessionID));
   }
 
   //Prihlasenie
-  if(req.session.email)
+  /*if(req.session.email)
   {
     res.redirect('/logged');
   }
@@ -169,7 +179,10 @@ app.get('/', function(req, res) {
   {
     res.render('index.html');
   }
+*/
 
+  //Pre teraz staci toto
+  res.render('index.html');
 });
 
 app.post('/register',(req,res)=> {
@@ -182,7 +195,7 @@ app.post('/register',(req,res)=> {
     }
   }
 
-  var user = new User(req.body.email,req.body.name,req.body.password,0,0);
+  var user = new User(req.body.email,req.body.name,req.body.password,0,1);
   users.push(user);
 
   console.log(users);
@@ -207,8 +220,14 @@ app.post('/login',((req, res) => {
       }
 
 
-      res.send("OK");
+
+      if(req.body.email === 'admin')
+        res.redirect('/admin');
+      else {
+        res.send("OK");
+      }
       return;
+
     }
   }
 
@@ -238,6 +257,7 @@ app.post('/down',(req,res)=> {
 
 app.get('/admin',function(req,res){
 
+  console.log("CALLED ADMIN");
   if(req.session.email) {
     res.write('<h1>Hello '+req.session.email+'</h1>');
     res.write('<a href="/logout">Logout</a>');
@@ -293,4 +313,78 @@ function getGame(sessionID)
   }
 
   return null;
+}
+
+function updateScore(game,ended)
+{
+  var score = game.housenka.body;
+  var lvl = game.housenka.level;
+
+  var maxScore = 0;
+  var maxLvl = 0;
+
+  var info = '';
+  console.log("user "+game.session.user.email + " has "+score+" score and is on "+lvl+" level!");
+  //game.
+
+    //Prepisanie najlepsich hodnot za session
+    var session = game.session;
+    if(session.score < score)
+    {
+      session.score = score;
+    }
+    if(session.level < lvl)
+    {
+      session.level = lvl
+    }
+
+    //Prepisanie najlepsich hodnot za hraca
+    var user = session.user;
+    if(user !== undefined)
+    {
+      if(user.score < score)
+      {
+        user.score = score;
+      }
+      if(user.level < lvl)
+      {
+        user.level = lvl
+      }
+
+      //Zistenie maximalneho score
+      if(session.score > user.score)
+        maxScore = session.score;
+      else
+        maxScore = user.score;
+
+      //Zistenie maximalneho levelu
+      if(session.level > user.level)
+        maxLvl = session.level;
+      else
+        maxLvl = user.level;
+
+    }
+    else
+    {
+      maxScore = session.score;
+      maxLvl = session.level;
+    }
+
+    //Posielame maxScore actScore maxLvl actLvl
+    info=maxScore+" "+score+" "+maxLvl+" "+lvl;
+
+    //TODO update leaderboard
+  if(ended) {
+    console.log("remaining " + game.housenka.lives + " lives");
+    game.housenka.koncime();
+    if(game.housenka.lives <=0) {
+      console.log("YOU LOST!");
+
+      //if(game.score < score)
+      game.housenka.restartGame();
+    }
+
+  }
+  return info;
+
 }

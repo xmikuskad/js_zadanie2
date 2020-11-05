@@ -15,12 +15,14 @@ connection.onmessage = e => {
     if(comm[0] === 'img') {
         imagesName = JSON.parse(comm[1]);
         housenkaInit();
+        loadLabels();
     }
     /*else if (comm[0] ==='test') {
         //TESTING!
     }*/
-    else {
-        show_new_area(JSON.parse(e.data));
+    else if(comm[0] === 'area') {
+        show_new_area(JSON.parse(comm[5]));
+        refreshLabels(comm);
     }
 }
 
@@ -95,14 +97,64 @@ function md5(inputString) {
 
 
 
-/** UI sekcia
-*
-*
-*
+/**
+ * Spracovanie dat a interakcia s html
+ *
  */
+var maxScore = 0;
+var score = 0;
+var maxLvl = 0;
+var lvl = 0;
+
+var maxScoreLabel,maxLvlLabel,lvlLabel,scoreLabel;
+
+function loadLabels()
+{
+    /*var content = '<h2>Max score is '+maxScore+'<h2/>' +
+        '<h2>Max lvl is '+maxLvl+'<h2/>' +
+        '<h2>Act score is '+score+'<h2/>' +
+        '<h2>Act lvl is '+lvl+'<h2/>';
+
+    var div = document.createElement('div');
+    div.innerHTML = content;*/
+
+    var place = document.getElementsByClassName('stav_hry');
+    console.log("Place");
+    console.log(place);
+
+    maxScoreLabel = document.createElement('h2');
+    maxScoreLabel.innerHTML = 'Max score is '+maxScore;
+    maxLvlLabel = document.createElement('h2');
+    maxLvlLabel.innerHTML = 'Max lvl is '+maxLvl;
+    scoreLabel = document.createElement('h2');
+    scoreLabel.innerHTML = 'Act score is '+score;
+    lvlLabel = document.createElement('h2');
+    lvlLabel.innerHTML = 'Act lvl is '+lvl;
+
+
+
+    place[0].appendChild(maxScoreLabel);
+    place[0].appendChild(maxLvlLabel);
+    place[0].appendChild(scoreLabel);
+    place[0].appendChild(lvlLabel);
+}
+
+function refreshLabels(comm)
+{
+    //Posielame area maxScore actScore maxLvl actLvl plocha
+
+    maxScore = comm[1];
+    score = comm[2];
+    maxLvl = comm[3];
+    lvl = comm[4];
+
+    maxScoreLabel.innerHTML = 'Max score is '+maxScore;
+    maxLvlLabel.innerHTML = 'Max lvl is '+maxLvl;
+    scoreLabel.innerHTML = 'Act score is '+score;
+    lvlLabel.innerHTML = 'Act lvl is '+lvl;
+}
 
 function loadMenu() {
-
     var emailField = document.createElement("INPUT");
     emailField.type='text';
     document.body.appendChild(emailField);
@@ -140,7 +192,11 @@ function loadMenu() {
             email: emailField.value,
             password: md5(passwordField.value)
         }, function (data) {
-            if(data === "OK") {
+            if(data.length > 10){ //TODO WTF
+                console.log("Admin logging?");
+                //document.body
+            }
+            else if(data === "OK") {
                 console.log("Logged in!");
                 connection.send("GETIMG")
             }
@@ -191,19 +247,9 @@ var plocha = new Array();
 
 //Nacitanie html tabulky a canvasu
 function housenkaInit () {
-    var x,y;
 
-    document.write('<style> table.housenka { border: solid black 1px; } table.housenka td { padding: 0px; border: none; width: 13px; height: 13px; font-size: 3px; } table.housenka td.prazdne { } table.housenka td.telicko { background-color: green; } table.housenka td.zradlo { background-color: cyan; } table.housenka td.zed { background-color: black; } table.housenka td.klic { background-color: red; } td.stav_hry table tr td span { font-size: 10pt; } table.housenka td.dvere { background-color: maroon; } table.housenka td.hlavicka { background-color: blue; } </style>');
     document.write('<table><tr><td valign="top"><table class="housenka" cellspacing="0">');
-    for (y=0; y < ysize; y++) {
-        document.write('<tr>');
-        for (x=0; x < xsize; x++) {
-            plocha[coords(x,y)] = 0;
-            document.write('<td id="pole-' + coords(x,y) + '">&nbsp;</td>');
-        }
-        document.write('</tr>');
-    }
-    document.write('</table></td><td width="10">&nbsp;</td><td valign="top" align="right" class="stav_hry"><table><tr><td align="right"><span id="uroven"></span></td><td align="left"><span id="uroven_text"></td></tr><tr><td align="right"><span id="zivoty"></span></td><td align="left"><span id="zivoty_text"></td></tr><tr><td align="right"><span id="klice"></span></td><td align="left"><span id="klice_text"></span></td></tr><tr><td align="right"><span id="bodovani"></span></td><td align="left"><span id="bodovani_text"></span></td></tr></table></td></tr></table><p align="left" id="result"></p>');
+    document.write('</table></td><td width="10">&nbsp;</td><td valign="top" align="right" class="stav_hry"></table>');
 
     document.defaultAction = false;
     myStart();
@@ -259,12 +305,10 @@ function nastavBarvu(pozice, barva) {
     context.drawImage(images[barva],(pozice%xsize)*48, Math.floor(pozice/xsize)*48,48,48);
 }
 
-//TODO posielanie na server
 function startHry () {
     //document['onkeydown'] = test_inter;
     document['onkeydown'] = send_keypress;
     document['onkeyup'] = send_keylift;
-    console.log('ready');
     connection.send("READY");
 }
 

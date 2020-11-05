@@ -54,7 +54,6 @@ class Housenka {
         this.telicko = [];
         this.klavesy = [];
         this.smer;		// 0 vpravo, pak po smeru
-        this.timer;
         this.hlaska = "";
         this.klicu = 0;
         this.ulozeno_na_klice = 0;
@@ -64,7 +63,6 @@ class Housenka {
         this.body_na_zacatku_levelu = 0;
         this.ridkost = false;
 
-//this.housenkaURI = location.href;
         this.housenkaIterator = 0;
 
         this.smery = [1, 0, 0, 1, -1, 0, 0, -1];
@@ -75,15 +73,6 @@ class Housenka {
         this.moving = false;
     }
 
-    /*module.exports = {
-        getArray,
-        stiskKlavesy,
-        uvolneniKlavesy,
-        novaHra,
-        pohybHousenky,
-        getImagesArr
-    }*/
-
     getImagesArr() {
         return this.imagesName;
     }
@@ -92,22 +81,7 @@ class Housenka {
         return this.plocha;
     }
 
-    /*getInfo() {
-        return [plocha, body, level, moving];
-    }
-
-    setInfo(info) {
-        this.body = info[0];
-        this.level = info[1];
-        this.moving = info[2];
-        this.plocha = info[3];
-    }*/
-
     zastavHousenku() {
-        /*if (timer) {
-            clearTimeout(timer);
-            timer = undefined;
-        }*/
         this.moving = false;
     }
 
@@ -163,6 +137,18 @@ class Housenka {
         this.startuj_hru = 1;
     }
 
+
+    //ADDED!
+    restartGame(){
+        this.body = 0;
+        this.level = 1;
+        this.lives = 3;
+
+        this.novaHra();
+
+        this.startuj_hru = 1;
+    }
+
     novaHra() {
 
         for (var y = 0; y < this.ysize; y++) {
@@ -170,12 +156,9 @@ class Housenka {
                 this.plocha[this.coords(x, y)] = 0;
             }
         }
-        console.log("OK1");
         this.zastavHousenku();
         this.vymazHousenku();
         this.vymazPlochu();
-
-        console.log("OK2");
 
         this.klicu = 0;
         this.bodu_za_zradlo = this.bodu_za_zradlo_orig;
@@ -183,11 +166,9 @@ class Housenka {
         this.klic_na_scene = false;
         this.dvere_na_scene = false;
         var informace = this.vygenerujLevel();
-        console.log("OK3");
         this.smer = informace[0];
         x = informace[1];
         y = informace[2];
-        console.log("OK4");
         var kam = (this.smer + 2) % this.idx_smeru.length;
         var p = Number(this.idx_smeru[kam]);
         var prdylka_x = x + this.smery[p];
@@ -195,9 +176,6 @@ class Housenka {
         this.narustHousenky(this.coords(prdylka_x, prdylka_y), false);
         this.narustHousenky(this.coords(x, y), true);
         this.doplnZradlo(this.zradlo_pocatek, -1);
-
-        //TODO odoslat na server novu hru?
-        console.log("OK5");
     }
 
     vymazPlochu() {
@@ -316,8 +294,15 @@ class Housenka {
             this.povolena_zmena_smeru = 1;
             if (!narust) this.nastavBarvu(this.telicko.pop(), 0);
             this.rozpohybujHousenku();
-        } else if (this.plocha[nova_pozice] == 1) this.koncime('worm');
-        else this.koncime('wall');
+        } else if (this.plocha[nova_pozice] == 1) {
+            //this.koncime('worm');
+            return true;
+        }
+        else {
+            //this.koncime('wall');
+            return true;
+        }
+        return false;
     }
 
     koncime(reason) {
