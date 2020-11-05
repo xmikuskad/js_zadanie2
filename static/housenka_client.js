@@ -1,25 +1,28 @@
 const url = 'ws://localhost:8082'
 const connection = new WebSocket(url)
 
+var isPlaying = false;
+
+/**
+ * Volania na server
+ *
+ */
+
 connection.onopen = () => {
     console.log("OnOPEN");
-    //connection.send("GETIMG") TODO ak chceme zacat hru
+    connection.send("GETIMG")
 }
 connection.onerror = error => {
     console.log(`WebSocket error: ${error}`)
 }
 connection.onmessage = e => {
-    console.log(e.data)
+    //console.log(e.data)
     var comm = e.data.split(" ");
 
     if(comm[0] === 'img') {
         imagesName = JSON.parse(comm[1]);
-        housenkaInit();
-        loadLabels();
+        getMenu();
     }
-    /*else if (comm[0] ==='test') {
-        //TESTING!
-    }*/
     else if(comm[0] === 'area') {
         show_new_area(JSON.parse(comm[5]));
         refreshLabels(comm);
@@ -27,21 +30,104 @@ connection.onmessage = e => {
 }
 
 window.onload = function() {
-    loadMenu();
-    /*$.post('http://localhost:8080/added',{}, function (data) {
-        //console.log("data "+JSON.parse(data));
-        console.log(data);
-        document.body.innerHTML = JSON.parse(data);
-
-        $.post('http://localhost:8080/added2',{}, function (data2) {
-            eval(JSON.parse(data2));
-        });
-
-    });*/
 };
 
-var logged_in = false;
 
+/*var a = document.createElement('label');
+a.innerText = "hello";
+var b =  function() { setTimeout(()=>{a.innerText = 'after 2 seconds'},2000)};
+b();
+document.body.appendChild(a);*/
+
+function getMenu()
+{
+    $.post('http://localhost:8080/getmenu',{}, function (data) {
+        console.log(data);
+        document.body.appendChild(parseObject(data));
+        loadLabels();
+        housenkaInit();
+    });
+}
+
+function logIn()
+{
+    var emailField = document.getElementById('emailLogin');
+    var passwordField = document.getElementById('passwordLogin')
+
+    console.log("LOGGING IN!");
+
+    if(emailText && passwordField) {
+        $.post('http://localhost:8080/login', {
+            email: emailField.value,
+            password: md5(passwordField.value)
+        }, function (data) {
+            if (data.length > 10) { //TODO WTF
+                console.log("Admin logging?");
+                //document.body
+            } else if (data === "OK") {
+                console.log("Logged in!");
+                connection.send("GETIMG")
+            } else {
+                console.log("Wrong combination of pass and email");
+            }
+        });
+    }
+}
+
+function register()
+{
+    var emailField = document.getElementById('emailRegistration');
+    var nameField = document.getElementById('nameRegistration');
+    var passwordField = document.getElementById('passwordRegistration')
+
+
+    console.log("REGISTERING!");
+
+    if(emailField && nameField && passwordField) {
+        $.post('http://localhost:8080/register', {
+            email: emailField.value,
+            name: nameField.value,
+            password: md5(passwordField.value)
+        }, function (data) {
+            if (data === "OK") {
+                console.log("Registered!");
+            } else {
+                console.log("Name is in use");
+            }
+        });
+    }
+}
+
+function changeGameStatus() {
+    if(isPlaying)
+    {
+        $.post('http://localhost:8080/start', {}, function (data) {
+            document.getElementById('statusBtn').innerText = 'Pause Game';
+        });
+    }
+    else {
+        $.post('http://localhost:8080/pause', {}, function (data) {
+            document.getElementById('statusBtn').innerText = 'Start game';
+        });
+    }
+
+    isPlaying = !isPlaying;
+}
+
+function todo(){
+    console.log('TODO');
+}
+
+/**
+ * Spracovanie dat a interakcia s html
+ *
+ */
+var maxScore = 0;
+var score = 0;
+var maxLvl = 0;
+var lvl = 0;
+
+var maxScoreLabel,maxLvlLabel,lvlLabel,scoreLabel;
 
 //Dokopy pozliepate s nahradou md5 kniznice z https://dev.to/nedsoft/a-simple-password-hash-implementation-3hcg TODO zmazat
 // Tu je spomenute, ze kniznica je free to use https://stackoverflow.com/questions/1655769/fastest-md5-implementation-in-javascript
@@ -92,51 +178,16 @@ function md5(inputString) {
     return rh(a)+rh(b)+rh(c)+rh(d);
 }
 
-
-
-
-
-
-/**
- * Spracovanie dat a interakcia s html
- *
- */
-var maxScore = 0;
-var score = 0;
-var maxLvl = 0;
-var lvl = 0;
-
-var maxScoreLabel,maxLvlLabel,lvlLabel,scoreLabel;
-
 function loadLabels()
 {
-    /*var content = '<h2>Max score is '+maxScore+'<h2/>' +
-        '<h2>Max lvl is '+maxLvl+'<h2/>' +
-        '<h2>Act score is '+score+'<h2/>' +
-        '<h2>Act lvl is '+lvl+'<h2/>';
-
-    var div = document.createElement('div');
-    div.innerHTML = content;*/
-
-    var place = document.getElementsByClassName('stav_hry');
-    console.log("Place");
-    console.log(place);
-
-    maxScoreLabel = document.createElement('h2');
+    maxScoreLabel = document.getElementById('maxScoreLabel');
     maxScoreLabel.innerHTML = 'Max score is '+maxScore;
-    maxLvlLabel = document.createElement('h2');
+    maxLvlLabel = document.getElementById('maxLvlLabel');
     maxLvlLabel.innerHTML = 'Max lvl is '+maxLvl;
-    scoreLabel = document.createElement('h2');
+    scoreLabel = document.getElementById('scoreLabel');
     scoreLabel.innerHTML = 'Act score is '+score;
-    lvlLabel = document.createElement('h2');
+    lvlLabel = document.getElementById('lvlLabel');
     lvlLabel.innerHTML = 'Act lvl is '+lvl;
-
-
-
-    place[0].appendChild(maxScoreLabel);
-    place[0].appendChild(maxLvlLabel);
-    place[0].appendChild(scoreLabel);
-    place[0].appendChild(lvlLabel);
 }
 
 function refreshLabels(comm)
@@ -154,62 +205,39 @@ function refreshLabels(comm)
     lvlLabel.innerHTML = 'Act lvl is '+lvl;
 }
 
-function loadMenu() {
-    var emailField = document.createElement("INPUT");
-    emailField.type='text';
-    document.body.appendChild(emailField);
 
-    document.body.appendChild(document.createElement("BR"));
+function parseObject(obj)
+{
+    var htmlObj = {};
+    if(obj.tag)
+    {
+        htmlObj = document.createElement(obj.tag);
+        for (const [key, val] of Object.entries(obj)) {
 
-    var passwordField = document.createElement("INPUT");
-    passwordField.type ='password';
-    document.body.appendChild(passwordField)
-
-    document.body.appendChild(document.createElement("BR"));
-
-    var register = document.createElement("BUTTON");
-    register.innerHTML = "Register";
-    register.onclick = function () {
-        $.post('http://localhost:8080/register',{
-            email: emailField.value,
-            password: md5(passwordField.value)
-        }, function (data) {
-            if(data === "OK") {
-                console.log("Registered!");
-            }
-            else
+            switch (key)
             {
-                console.log("Name is in use");
+                case 'innerTags':
+                    for (var i = 0; i < val.length; i++) {
+                        htmlObj.appendChild(parseObject(val[i]))
+                    }
+                    break;
+                case 'style':
+                    for (const [key1, val1] of Object.entries(obj[key])) {
+                        htmlObj[key][key1] = val1;
+                    }
+                    break;
+                case 'onclick':
+                    htmlObj[key] = this[val];
+                    break;
+                default:
+                    htmlObj[key] = val;
+                    break;
             }
-        });
+        }
     }
-    document.body.appendChild(register);
 
-    var login = document.createElement("BUTTON");
-    login.innerHTML = "Login";
-    login.onclick = function () {
-        $.post('http://localhost:8080/login',{
-            email: emailField.value,
-            password: md5(passwordField.value)
-        }, function (data) {
-            if(data.length > 10){ //TODO WTF
-                console.log("Admin logging?");
-                //document.body
-            }
-            else if(data === "OK") {
-                console.log("Logged in!");
-                connection.send("GETIMG")
-            }
-            else
-            {
-                console.log("Wrong combination of pass and email");
-            }
-        });
-    }
-    document.body.appendChild(login);
-
+    return htmlObj;
 }
-
 
 /***
  *  HOUSENKA START
@@ -240,37 +268,18 @@ var context; //Referencia na vykreslovanie
 var imagesName;
 var images = new Array('') //Sem sa ulozia nacitane img objekty
 
-//Mozno iba treba?
 var xsize = 41;
-var ysize = 31;
 var plocha = new Array();
 
-//Nacitanie html tabulky a canvasu
-function housenkaInit () {
-
-    document.write('<table><tr><td valign="top"><table class="housenka" cellspacing="0">');
-    document.write('</table></td><td width="10">&nbsp;</td><td valign="top" align="right" class="stav_hry"></table>');
-
-    document.defaultAction = false;
-    myStart();
-}
-
-function coords (x,y) {
-    return y*xsize + x;
-}
 
 //Load canvas
-function myStart() {
+function housenkaInit() {
     //Schovanie tabulky
-    var el = document.getElementsByClassName("housenka")[0];
-    el.style = "display : none";
+    document.defaultAction = false;
 
-    //Vytvorenie canvasu
-    var canvas = document.createElement("canvas");
+
+    var canvas = document.getElementById('canvas');
     context = canvas.getContext("2d");
-    canvas.width = 1968;
-    canvas.height = 1488;
-    el.parentElement.append(canvas);
 
     //Nacitanie obrazkov do pola
     loadResources()

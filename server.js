@@ -74,7 +74,7 @@ wss.on('connection', (ws,req) => {
   }
 
   ws.on('message', message => {
-    console.log(`Received message => ${message}`)
+    //console.log(`Received message => ${message}`)
     //console.log(getSessionID(req.headers.cookie));
     var game = getGame(getSessionID(req.headers.cookie))
     if(!game.started)
@@ -82,11 +82,12 @@ wss.on('connection', (ws,req) => {
       if(message === 'GETIMG')
       {
         ws.send('img '+JSON.stringify(game.housenka.getImagesArr()));
+        game.housenka.novaHra();
       }
       if(message === 'READY')
       {
-        game.housenka.novaHra();
-        game.started = true;
+        var info = updateScore(game,false)
+        ws.send('area '+info+' '+JSON.stringify(game.housenka.getArray()));
       }
     }
 
@@ -107,17 +108,16 @@ wss.on('testik', (data) => {
   {
     var game = getGame(users_conn[i][1]);
     if(game!=null && game.started) {
-      if(game.session.user)
-        console.log("Connected " + game.session.user.email);
+      /*if(game.session.user)
+        console.log("Connected " + game.session.user.email);*/
       var ended = game.housenka.pohybHousenky();
       var scoreInfo = updateScore(game,ended);
-      console.log(scoreInfo);
+      //console.log(scoreInfo);
       users_conn[i][0].send('area '+scoreInfo+' '+JSON.stringify(game.housenka.getArray()));
       //game.session.user.score++;
     }
   }
 })
-
 
 setInterval(function(){
   wss.emit('testik','MY MESSAGE');
@@ -183,6 +183,9 @@ app.get('/', function(req, res) {
 
   //Pre teraz staci toto
   res.render('index.html');
+  //res.sendFile('views/index.html', {root: __dirname})
+  //res.end("Test!");
+
 });
 
 app.post('/register',(req,res)=> {
@@ -236,7 +239,7 @@ app.post('/login',((req, res) => {
 
 
 app.post('/up',(req,res)=> {
-  console.log("UP "+req.body.code);
+  //console.log("UP "+req.body.code);
   var game = getGame(req.sessionID);
 
   if(game!=null)
@@ -246,13 +249,29 @@ app.post('/up',(req,res)=> {
 })
 
 app.post('/down',(req,res)=> {
-  console.log("DOWN "+req.body.code);
+  //console.log("DOWN "+req.body.code);
   var game = getGame(req.sessionID);
 
   if(game!=null)
     game.housenka.uvolneniKlavesy(parseInt(req.body.code));
 
   res.end()
+})
+
+app.post('/getmenu',(req,res)=> {
+  console.log("SENGING TABLE");
+  res.send(createTable());
+  res.end();
+})
+
+app.post('/start',(req,res)=> {
+  getGame(req.sessionID).started = true;
+  res.end();
+})
+
+app.post('/pause',(req,res)=> {
+  getGame(req.sessionID).started = false;
+  res.end();
 })
 
 app.get('/admin',function(req,res){
@@ -295,6 +314,17 @@ app.listen(port, () => {
  * Helper functions
  */
 
+function createObject(params)
+{
+  var obj = {};
+  for(var i=0;i<params.length;i++)
+  {
+    obj[params[i][0]] = params[i][1];
+  }
+
+  return obj;
+}
+
 //connect.sid=s%3Ag57IbGaNr6yMz4FbOMasXu4PtRtxkT2A.1SEXmdvIBVuPgMH61F0w5bKs8JTsfk1%2BDnjFHIHwexk
 function getSessionID(raw_text)
 {
@@ -315,76 +345,156 @@ function getGame(sessionID)
   return null;
 }
 
-function updateScore(game,ended)
-{
-  var score = game.housenka.body;
-  var lvl = game.housenka.level;
 
+function updateScore(game,ended) {
+  var score=0;
+  var lvl =1;
   var maxScore = 0;
-  var maxLvl = 0;
-
+  var maxLvl = 1;
   var info = '';
-  console.log("user "+game.session.user.email + " has "+score+" score and is on "+lvl+" level!");
-  //game.
 
-    //Prepisanie najlepsich hodnot za session
-    var session = game.session;
-    if(session.score < score)
-    {
-      session.score = score;
+  if (game) {
+    score = game.housenka.body;
+    lvl = game.housenka.level;
+  }
+
+  //Prepisanie najlepsich hodnot za session
+  var session = game.session;
+  if (session.score < score) {
+    session.score = score;
+  }
+  if (session.level < lvl) {
+    session.level = lvl
+  }
+
+  //Prepisanie najlepsich hodnot za hraca
+  var user = session.user;
+  if (user) {
+    if (user.score < score) {
+      user.score = score;
     }
-    if(session.level < lvl)
-    {
-      session.level = lvl
+    if (user.level < lvl) {
+      user.level = lvl
     }
 
-    //Prepisanie najlepsich hodnot za hraca
-    var user = session.user;
-    if(user !== undefined)
-    {
-      if(user.score < score)
-      {
-        user.score = score;
-      }
-      if(user.level < lvl)
-      {
-        user.level = lvl
-      }
-
-      //Zistenie maximalneho score
-      if(session.score > user.score)
-        maxScore = session.score;
-      else
-        maxScore = user.score;
-
-      //Zistenie maximalneho levelu
-      if(session.level > user.level)
-        maxLvl = session.level;
-      else
-        maxLvl = user.level;
-
-    }
-    else
-    {
+    //Zistenie maximalneho score
+    if (session.score > user.score)
       maxScore = session.score;
+    else
+      maxScore = user.score;
+
+    //Zistenie maximalneho levelu
+    if (session.level > user.level)
       maxLvl = session.level;
-    }
+    else
+      maxLvl = user.level;
 
-    //Posielame maxScore actScore maxLvl actLvl
-    info=maxScore+" "+score+" "+maxLvl+" "+lvl;
+  } else {
+    maxScore = session.score;
+    maxLvl = session.level;
+  }
 
-    //TODO update leaderboard
-  if(ended) {
+  //Posielame maxScore actScore maxLvl actLvl
+  info = maxScore + " " + score + " " + maxLvl + " " + lvl;
+
+  //TODO update leaderboard
+  if (ended) {
     console.log("remaining " + game.housenka.lives + " lives");
     game.housenka.koncime();
-    if(game.housenka.lives <=0) {
+    if (game.housenka.lives <= 0) {
       console.log("YOU LOST!");
 
-      //if(game.score < score)
       game.housenka.restartGame();
     }
 
   }
+
   return info;
+}
+
+function createLabel(text,size)
+{
+  const labelStyle = createObject([['fontSize', size]]);
+  return createObject([['tag','label'],['innerText',text],['style',labelStyle]]);
+}
+
+function createButton(text,functionName,id)
+{
+  const style = createObject([['width', '190px'], ['height', '50px']]);
+  return createObject([['tag', 'button'], ['id',id] ,['innerHTML', text], ['style', style], ['onclick', functionName]]);
+}
+
+function createInputField(id)
+{
+  const style = createObject([['width', '180px'], ['height', '50px'], ['fontSize', '22px']]);
+  return createObject([['tag', 'input'], ['id',id] ,['type', 'text'], ['style', style]]);
+}
+
+function createPasswordField(id)
+{
+  const style = createObject([['width', '180px'], ['height', '50px'], ['fontSize', '22px']]);
+  return createObject([['tag', 'input'], ['id',id] ,['type', 'password'], ['style', style]]);
+}
+
+function createStatLabel(id)
+{
+  return createObject([['tag', 'h2'], ['id', id], ['innerHTML', 'randomtext']]);
+}
+
+function getUserPart()
+{
+  const br = createObject([['tag', 'br']]);
+
+  return createObject([['tag', 'div'], ['id', 'userPart'], ['innerTags', [
+    createObject([['tag', 'tr'], ['innerTags', [createLabel('Email')]]]),
+    createObject([['tag', 'tr'], ['innerTags', [createInputField('emailLogin')]]]), br,
+    createObject([['tag', 'tr'], ['innerTags', [createLabel('Password')]]]),
+    createObject([['tag', 'tr'], ['innerTags', [createPasswordField('passwordLogin')]]]), br,
+    createObject([['tag', 'tr'], ['innerTags', [createButton('Log in','logIn','passwordBtn')]]]), br,
+    createObject([['tag', 'tr'], ['innerTags', [createLabel('Email')]]]),
+    createObject([['tag', 'tr'], ['innerTags', [createInputField('emailRegistration')]]]), br,
+    createObject([['tag', 'tr'], ['innerTags', [createLabel('Name')]]]),
+    createObject([['tag', 'tr'], ['innerTags', [createInputField('nameRegistration')]]]), br,
+    createObject([['tag', 'tr'], ['innerTags', [createLabel('Password')]]]),
+    createObject([['tag', 'tr'], ['innerTags', [createPasswordField('passwordRegistration')]]]), br,
+    createObject([['tag', 'tr'], ['innerTags', [createButton('Register','register','registerBtn')]]]), br
+
+  ]]]);
+}
+
+function createTable()
+{
+  const br = createObject([['tag', 'br']]);
+
+  const otherPart = createObject([['tag', 'div'], ['innerTags', [
+    createObject([['tag', 'tr'], ['innerTags', [createLabel('PIN')]]]),
+    createObject([['tag', 'tr'], ['innerTags', [createInputField('pin')]]]),br,
+    createObject([['tag', 'tr'], ['innerTags', [createButton('Connect','todo','connectBtn')]]]), br,
+    createObject([['tag', 'tr'], ['innerTags', [createButton('Leaderboards','todo','leaderboardBtn')]]]), br,
+    createObject([['tag', 'tr'], ['innerTags', [createButton('Load game','todo','loadBtn')]]]), br,
+    createObject([['tag', 'tr'], ['innerTags', [createButton('Save game','todo','saveBtn')]]]), br
+  ]]]);
+
+
+  const gamePart = createObject([['tag', 'table'], ['id', 'housenka'], ['innerTags', [
+    createObject([['tag', 'tr'], ['innerTags', [
+      createObject([['tag', 'td'], ['innerTags', [
+        createObject([['tag', 'canvas'], ['width', '1968'], ['height', '1488'], ['id', 'canvas']])
+      ]]]),
+      createObject([['tag', 'td'], ['width', '15']]),
+      createObject([['tag', 'td'], ['valign', 'top'], ['align', 'left'], ['id', 'stats'], ['innerTags', [
+        createStatLabel('maxScoreLabel'), br,
+        createStatLabel('maxLvlLabel'), br,
+        createStatLabel('scoreLabel'), br,
+        createStatLabel('lvlLabel'), br,
+        createObject([['tag', 'tr'], ['innerTags', [createButton('Start game','changeGameStatus','statusBtn')]]]), br,
+        getUserPart(), br, otherPart
+      ]]])
+    ]]])
+  ]]]);
+
+  console.log(gamePart);
+
+  return gamePart;
 
 }
