@@ -18,11 +18,12 @@ const WEBSOCKET_PORT = 8082;
 const app = express()
 
 var sessions = []; //Array of active sessions
-var code = 0;
 var users_conn = [];
 var users=[]; //array of Users registered
 var games=[]; //array of Game played
 var leaderboard = [];
+//var pins = [];
+var pins = {};
 
 var sessionCheckerTimer;
 
@@ -70,14 +71,49 @@ class Game {
 }
 
 /**
+ * Initialization
+ *
+ */
+
+//Add admin account
+users.push(new User('admin','admin','21232f297a57a5a743894a0e4a801fc3',0,1)) //heslo je tiez admin
+
+for(let i=0; i<10000; i++)
+{
+  let pin = '';
+
+  switch (i.toString().length)
+  {
+    case 1:
+      pin = '000';
+      break;
+    case 2:
+      pin = '00';
+      break;
+    case 3:
+      pin = '0';
+      break;
+    case 3:
+      pin = '';
+      break;
+  }
+  pin += i;
+  pins[pin] = false;
+}
+
+
+/**
  * Websocket
  */
+
 const wss = new WebSocket.Server({ port: WEBSOCKET_PORT })
 
 wss.on('connection', (ws,req) => {
   var game = null;
 
-  //console.log(req);
+  console.log(req.headers);
+  console.log(req.url);
+
   //console.log(ws);
   console.log("CONNECTED WITH COOKIE " + getSessionID(req.headers.cookie));
 
@@ -86,12 +122,10 @@ wss.on('connection', (ws,req) => {
   {
     if(users_conn[j][1] === getSessionID(req.headers.cookie)){
       console.log("DUPLICATE!!!!");
-      //users_conn[j][0] = ws;
-      //found = true;
-      //var foundGame = getGame(getSessionID(req.headers.cookie));
 
       for(var i=0;i<games.length;i++) {
         if (games[i].session.sessionID === users_conn[j][1]) {
+          pins[games[i].pin] = false;
           games.splice(games.indexOf(i),1);
         }
       }
@@ -114,7 +148,7 @@ wss.on('connection', (ws,req) => {
   for (var i = 0; i < sessions.length; i++) {
     if (sessions[i].sessionID === getSessionID(req.headers.cookie)) {
       console.log("FOUND SESSION");
-      game = new Game(sessions[i], code++, null, new housenka_class());
+      game = new Game(sessions[i], getAvailablePin(), null, new housenka_class());
       games.push(game);
       break;
     }
@@ -187,6 +221,7 @@ function checkSessions()
       //Delete game
       for(var i=0;i<games.length;i++) {
         if (games[i].session.sessionID === sessionID) {
+          pins[games[i].pin] = false;
           games.splice(games.indexOf(i),1);
           break;
         }
@@ -233,7 +268,7 @@ app.engine('html', require('ejs').renderFile);
 app.use(session({
   secret: 'housenka',
   resave: true,
-  saveUninitialized: true,
+  saveUninitialized: true
 }));
 
 app.get('/index', function(req, res) {
@@ -242,8 +277,6 @@ app.get('/index', function(req, res) {
 
 
 app.get('/', function(req, res) {
-
-  console.log('express cookie '+req.sessionID);
 
   req.session.cookie.expires = true
   req.session.cookie.maxAge = 200000; //po 6 min vyprsi session ? TODO
@@ -270,7 +303,7 @@ app.get('/', function(req, res) {
 app.post('/register',(req,res)=> {
   for(var i =0;i<users.length;i++)
   {
-    if(users[i].email === req.body.email)
+    if(users[i].email === req.body.email || users[i].name === req.body.name)
     {
       res.send("NOPE!");
       return;
@@ -303,8 +336,10 @@ app.post('/login',((req, res) => {
       //refresh stats
       refreshStats(req.sessionID);
 
-      if(req.body.email === 'admin')
-        res.redirect('/admin');
+      if(req.body.email === 'admin') {
+        //TODO ADMIN
+        res.send(createAdminMenu());
+      }
       else {
         console.log(createLogout(req.session.name));
         res.send(createLogout(req.session.name));
@@ -360,6 +395,10 @@ app.post('/start',(req,res)=> {
 app.post('/pause',(req,res)=> {
   getGame(req.sessionID).started = false;
   res.end();
+})
+
+app.get('/connect', function(req,res) {
+  var pin = req.body.pin;
 })
 
 app.get('/admin',function(req,res){
@@ -443,8 +482,11 @@ app.get('/logout',function(req,res){
 });
 
 app.get('/leaderboard', function(req,res) {
-  console.log(createLeaderboard());
   res.send(createLeaderboard());
+})
+
+app.get('/activegames',function(req,res) {
+  res.send(createActiveGames());
 })
 
 
@@ -478,6 +520,39 @@ function getSessionID(raw_text)
 {
   const raw_cookie = raw_text.split("connect.sid=s%3A");
   return raw_cookie[1].split('.')[0];
+}
+
+function getAvailablePin()
+{
+  for(var i=0;i<10000;i++)
+  {
+    var pin= '';
+    switch (i.toString().length)
+    {
+      case 1:
+        pin = '000';
+        break;
+      case 2:
+        pin = '00';
+        break;
+      case 3:
+        pin = '0';
+        break;
+      case 3:
+        pin = '';
+        break;
+    }
+    pin+=i;
+
+    if(!pins[pin])
+    {
+      console.log('PIN '+pin+' is free!');
+      pins[pin] = true;
+      return pin;
+    }
+  }
+
+  return null;
 }
 
 function getSession(sessionID)
@@ -612,6 +687,56 @@ function createObject(params)
   return obj;
 }
 
+function getGamesPins()
+{
+  const style = createObject([['fontSize', '35px']]);
+  var header = createObject([['tag','tr'],['innerTags',[
+    createObject([['tag','th'],['width','50%'],['style',style],['innerText','Game number']]),
+    createObject([['tag','th'],['width','50%'],['style',style],['innerText','PIN']])
+  ]]]);
+
+  var obj = [header];
+
+  for(var i=0;i<games.length;i++)
+  {
+    var item = games[i];
+    var tableItem = createObject([['tag','tr'],['innerTags',[
+      createObject([['tag','td'],['width','50%'],['align','center'],['style',style],['innerText',i+1]]),
+      createObject([['tag','td'],['width','50%'],['align','center'],['style',style],['innerText',games[i].pin]]),
+    ]]]);
+    obj.push(tableItem);
+  }
+
+  return obj;
+}
+
+function createActiveGames() {
+  var style = createObject([['width', '500px']]);
+
+  var activeGames = createObject([['tag', 'div'], ['id', 'showActiveGames'], ['style', style], ['innerTags', [
+    createLabel('Active games', '40px'),
+    createObject([['tag', 'table'], ['innerTags',
+      getGamesPins()
+    ]])
+  ]]])
+  return activeGames;
+}
+
+function createAdminMenu() {
+
+  const br = createObject([['tag', 'br']]);
+  var logout = createLogout('admin');
+
+  var admin = [createButton('Show users','showUsers','showUsers'),br,
+      createButton('Save users','saveUsers','saveUsers'),br,
+    createButton('Load users','loadUsers','loadUsers'),br,logout]
+
+
+  var obj = createObject([['tag','div'],['id','adminPart'],['innerTags',admin]]);
+
+  return obj;
+}
+
 function createLogout(name)
 {
   return createObject([['tag', 'div'], ['id', 'logoutMenu'], ['innerTags', [
@@ -625,7 +750,7 @@ function createLogout(name)
 function createLabel(text,size)
 {
   const labelStyle = createObject([['fontSize', size]]);
-  return createObject([['tag','label'],['innerText',text],['style',labelStyle]]);
+  return createObject([['tag','span'],['innerText',text],['display','inline-block'],['style',labelStyle]]);
 }
 
 function createButton(text,functionName,id)
@@ -661,9 +786,9 @@ function getLeaderboardData()
   const style = createObject([['fontSize', '35px']]);
   var header = createObject([['tag','tr'],['innerTags',[
     createObject([['tag','th'],['width','10%'],['style',style],['innerText','Poradie']]),
-    createObject([['tag','th'],['width','10%'],['style',style],['innerText','Meno']]),
-    createObject([['tag','th'],['width','10%'],['style',style],['innerText','Level']]),
-    createObject([['tag','th'],['width','10%'],['style',style],['innerText','Skore']]),
+    createObject([['tag','th'],['width','30%'],['style',style],['innerText','Meno']]),
+    createObject([['tag','th'],['width','30%'],['style',style],['innerText','Level']]),
+    createObject([['tag','th'],['width','30%'],['style',style],['innerText','Skore']]),
   ]]]);
 
   var obj = [header];
@@ -674,10 +799,10 @@ function getLeaderboardData()
   {
     var item = leaderboard[i];
     var tableItem = createObject([['tag','tr'],['innerTags',[
-      createObject([['tag','td'],['width','10%'],['style',style],['innerText',i]]),
-      createObject([['tag','td'],['width','30%'],['style',style],['innerText',item.name]]),
-      createObject([['tag','td'],['width','30%'],['style',style],['innerText',item.level]]),
-      createObject([['tag','td'],['width','30%'],['style',style],['innerText',item.score]])
+      createObject([['tag','td'],['width','10%'],['align','center'],['style',style],['innerText',i+1]]),
+      createObject([['tag','td'],['width','30%'],['align','center'],['style',style],['innerText',item.name]]),
+      createObject([['tag','td'],['width','30%'],['align','center'],['style',style],['innerText',item.level]]),
+      createObject([['tag','td'],['width','30%'],['align','center'],['style',style],['innerText',item.score]])
     ]]]);
     obj.push(tableItem);
   }
@@ -727,7 +852,7 @@ function createTable()
     createObject([['tag', 'tr'], ['innerTags', [createInputField('pin')]]]),br,
     createObject([['tag', 'tr'], ['innerTags', [createButton('Connect','todo','connectBtn')]]]), br,
     createObject([['tag', 'tr'], ['innerTags', [createButton('Show leaderboard','showLeaderboard','leaderboardBtn')]]]), br,
-    createObject([['tag', 'tr'], ['innerTags', [createButton('Show all games','todo','showGamesBtn')]]]), br,
+    createObject([['tag', 'tr'], ['innerTags', [createButton('Show all games','showActiveGames','showGamesBtn')]]]), br,
     createObject([['tag', 'tr'], ['innerTags', [createUploadField('loadGame')]]]), br,
     createObject([['tag', 'tr'], ['innerTags', [createButton('Load game','loadGame','loadBtn')]]]), br,
     createObject([['tag', 'tr'], ['innerTags', [createButton('Save game','saveGame','saveBtn')]]]), br

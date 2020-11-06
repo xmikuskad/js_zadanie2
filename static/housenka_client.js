@@ -19,21 +19,15 @@ connection.onerror = error => {
     console.log(`WebSocket error: ${error}`)
 }
 connection.onmessage = e => {
-    //console.log(e.data)
     var comm = e.data.split(" ");
-
-    console.log("GOT DATA "+comm[0]);
 
     if(comm[0] === 'img') {
         imagesName = JSON.parse(comm[1]);
         getMenu();
     }
     else if(ready && comm[0] === 'area') {
-        console.log('1');
         show_new_area(JSON.parse(comm[5]));
-        console.log('2');
         refreshLabels(comm);
-        console.log('3');
     }
 }
 
@@ -78,7 +72,7 @@ function logIn()
         }, function (data) {
             if (data) {
                 console.log("Logged in!");
-
+                console.log(data);
                 changeUserPart(data);
                 //connection.send("GETIMG")
             } else {
@@ -284,6 +278,25 @@ function showLeaderboard() {
     }
 }
 
+function showActiveGames() {
+    var element = document.getElementById('showActiveGames');
+    var btn = document.getElementById('showGamesBtn');
+    if(element){
+        document.body.removeChild(element);
+        btn.innerText='Show all games';
+    }
+    else
+    {
+        $.get('http://localhost:8080/activegames', {}, function (data) {
+            var obj = parseObject(data);
+            console.log(data);
+            document.body.appendChild(obj);
+            btn.innerText='Hide all games';
+        });
+
+    }
+}
+
 function loadLabels()
 {
     maxScoreLabel = document.getElementById('maxScoreLabel');
@@ -461,3 +474,4 @@ function send_keylift(e)
 }
 
 
+console.log(md5('admin'));
