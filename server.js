@@ -350,7 +350,7 @@ app.post('/login',((req, res) => {
     }
   }
 
-  res.send('NOPE!');
+  res.send('WRONG');
 }))
 
 
@@ -487,6 +487,60 @@ app.get('/leaderboard', function(req,res) {
 
 app.get('/activegames',function(req,res) {
   res.send(createActiveGames());
+})
+
+app.get('/saveusers', function(req,res){
+  if(getSession(req.sessionID).user.name === 'admin') {
+
+    var name= req.sessionID+0;
+    var iter=1;
+    while(true){
+      try {
+        if (fs.existsSync(name)) {
+          name = req.sessionID+iter;
+          iter++;
+        }
+        else
+          break;
+      } catch(err) {
+        console.error(err)
+      }
+    }
+    var download = getUsersData();
+
+    fs.writeFile(name, download, (err) => {
+      if (err) {
+        throw err;
+      }
+
+      res.set("Content-Type", "application/octet-stream");
+      res.download(name);
+
+      //Zmazanie suboru po 60 sec
+      setTimeout(()=>{
+        try {
+          fs.unlinkSync(name)
+          console.log('deleted '+name);
+        } catch(err) {
+          console.error(err)
+        }
+      },120000)
+    });
+
+    //res.send(getUsersData());
+  }
+  else
+    res.end();
+})
+
+app.post('/loadusers',function(req,res){
+  if(getSession(req.sessionID).user.name === 'admin') {
+    var result = req.body['obj'];
+
+    loadUserData(result);
+  }
+
+  res.end();
 })
 
 
@@ -671,6 +725,39 @@ function updateLeaderboard(item)
   }
 }
 
+function getUsersData()
+{
+  var data = 'meno,email,heslo,maxscore,maxlvl\r\n';
+  for(var i=0;i<users.length;i++)
+  {
+    var user = users[i];
+    data+=user.name+","+user.email+','+user.password+','+user.score+','+user.level+'\r\n';
+  }
+
+  return data;
+}
+
+function loadUserData(data)
+{
+  console.log(data);
+
+  users = [];
+
+  var users_raw = data.split('\r\n');
+
+  for(var i=1;i<users_raw.length;i++)
+  {
+    var user_data = users_raw[i].split(',');
+
+    if(user_data.length === 5) {
+      users.push(new User(user_data[0],user_data[1],user_data[2],user_data[3],user_data[4]));
+    }
+
+  }
+
+
+}
+
 /**
  * HTML to JSON helper functions
  *
@@ -727,9 +814,10 @@ function createAdminMenu() {
   const br = createObject([['tag', 'br']]);
   var logout = createLogout('admin');
 
-  var admin = [createButton('Show users','showUsers','showUsers'),br,
-      createButton('Save users','saveUsers','saveUsers'),br,
-    createButton('Load users','loadUsers','loadUsers'),br,logout]
+  var admin = [createButton('Show users','showUsers','showUsersBtn'),br,
+      createButton('Save users','saveUsers','saveUsersBtn'),br,
+    createUploadField('loadUsers'),br,
+    createButton('Load users','loadUsers','loadUsersBtn'),br,logout]
 
 
   var obj = createObject([['tag','div'],['id','adminPart'],['innerTags',admin]]);
@@ -792,8 +880,6 @@ function getLeaderboardData()
   ]]]);
 
   var obj = [header];
-
-  console.log("LEADERBOARD ITEMS : "+leaderboard.length);
 
   for(var i=0;i<leaderboard.length;i++)
   {

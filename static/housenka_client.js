@@ -70,7 +70,8 @@ function logIn()
             email: emailField.value,
             password: md5(passwordField.value)
         }, function (data) {
-            if (data) {
+            console.log(data);
+            if (data !== 'WRONG') {
                 console.log("Logged in!");
                 console.log(data);
                 changeUserPart(data);
@@ -134,6 +135,29 @@ function logout()
     });
 }
 
+function saveUsers()
+{
+    window.location = 'http://localhost:8080/saveusers';
+}
+
+function loadUsers()
+{
+    var data = document.getElementById('loadUsers');
+
+    var reader = new FileReader();
+    reader.onload = function(event) {
+        console.log(event.target.result);
+
+        var a= event.target.result;
+
+        $.post('http://localhost:8080/loadusers', {'obj':a}, function (data) {
+            console.log('loaded!');
+        });
+
+
+    }
+    reader.readAsText(data.files[0]);
+}
 
 function loadGame()
 {
