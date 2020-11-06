@@ -1,7 +1,10 @@
 const url = 'ws://localhost:8082'
 const connection = new WebSocket(url)
 
+
 var isPlaying = false;
+var playingAudio = false;
+var ready = false;
 
 /**
  * Volania na server
@@ -19,13 +22,18 @@ connection.onmessage = e => {
     //console.log(e.data)
     var comm = e.data.split(" ");
 
+    console.log("GOT DATA "+comm[0]);
+
     if(comm[0] === 'img') {
         imagesName = JSON.parse(comm[1]);
         getMenu();
     }
-    else if(comm[0] === 'area') {
+    else if(ready && comm[0] === 'area') {
+        console.log('1');
         show_new_area(JSON.parse(comm[5]));
+        console.log('2');
         refreshLabels(comm);
+        console.log('3');
     }
 }
 
@@ -43,7 +51,10 @@ function getMenu()
 {
     $.post('http://localhost:8080/getmenu',{}, function (data) {
         console.log(data);
-        document.body.appendChild(parseObject(data));
+        var div = document.getElementById('menu');
+        if(div.childElementCount <=0)
+            div.appendChild(parseObject(data));
+
         loadLabels();
         housenkaInit();
     });
@@ -56,17 +67,16 @@ function logIn()
 
     console.log("LOGGING IN!");
 
-    if(emailText && passwordField) {
+    if(emailField && passwordField) {
         $.post('http://localhost:8080/login', {
             email: emailField.value,
             password: md5(passwordField.value)
         }, function (data) {
-            if (data.length > 10) { //TODO WTF
-                console.log("Admin logging?");
-                //document.body
-            } else if (data === "OK") {
+            if (data) {
                 console.log("Logged in!");
-                connection.send("GETIMG")
+
+                changeUserPart(data);
+                //connection.send("GETIMG")
             } else {
                 console.log("Wrong combination of pass and email");
             }
@@ -99,19 +109,88 @@ function register()
 }
 
 function changeGameStatus() {
+    console.log("CHANGING GAME STATUS!");
     if(isPlaying)
     {
+        $.post('http://localhost:8080/pause', {}, function (data) {
+            document.getElementById('statusBtn').innerText = 'Unpause game';
+        });
+    }
+    else {
         $.post('http://localhost:8080/start', {}, function (data) {
             document.getElementById('statusBtn').innerText = 'Pause Game';
         });
     }
-    else {
-        $.post('http://localhost:8080/pause', {}, function (data) {
-            document.getElementById('statusBtn').innerText = 'Start game';
-        });
-    }
 
     isPlaying = !isPlaying;
+}
+
+function logout()
+{
+    $.post('http://localhost:8080/logout', {
+        email: undefined,
+        name: undefined,
+        password: undefined
+    }, function (data) {
+        changeUserPart(data);
+    });
+}
+
+
+function loadGame()
+{
+    var data = document.getElementById('loadGame');
+
+    var reader = new FileReader();
+    reader.onload = function(event) {
+        console.log(event.target.result);
+
+        var a= event.target.result;
+        var test = JSON.parse(event.target.result);
+
+        console.log(Object.keys(test));
+        console.log(test);
+        console.log(test.level);
+
+        $.post('http://localhost:8080/upload', {'obj':a}, function (data) {
+            console.log('loaded!');
+        });
+
+        /*$.post({
+            url: 'http://localhost:8080/upload',
+            contentType: 'application/json; charset=utf-8'
+        },JSON.parse(event.target.result))
+            .done(function (response) {
+                console.log("UPLOADED!");
+            });*/
+    }
+    reader.readAsText(data.files[0]);
+    //console.log()
+    //console.log(data.value);
+
+    /*$.getJSON(data.value, function(obj) {
+        console.log(obj.details.ProductID);
+    });*/
+
+    /*$.post('http://localhost:8080/upload', data.files, function (data) {
+        console.log('loaded!');
+    });*/
+}
+
+
+function saveGame()
+{
+    window.location = 'http://localhost:8080/download';
+}
+
+function changeUserPart(newObj)
+{
+    var userDiv = document.getElementById('userPart');
+
+    while(userDiv.firstChild)
+        userDiv.removeChild(userDiv.lastChild);
+
+    userDiv.appendChild(parseObject(newObj));
 }
 
 function todo(){
@@ -177,6 +256,27 @@ function md5(inputString) {
     }
     return rh(a)+rh(b)+rh(c)+rh(d);
 }
+
+function changeAudioStatus()
+{
+    console.log("Changing status!");
+
+    var audio = document.getElementById('audio');
+    var btn = document.getElementById('audioBtn');
+
+    if(playingAudio){
+        audio.pause();
+        btn.innerText = 'Turn on audio';
+    }
+    else
+    {
+        audio.play();
+        btn.innerText = 'Turn off audio';
+    }
+
+    playingAudio = !playingAudio;
+}
+
 
 function loadLabels()
 {
@@ -315,44 +415,43 @@ function nastavBarvu(pozice, barva) {
 }
 
 function startHry () {
-    //document['onkeydown'] = test_inter;
     document['onkeydown'] = send_keypress;
     document['onkeyup'] = send_keylift;
+    ready = true;
     connection.send("READY");
 }
-
+var lastArea = null;
 function show_new_area(area)
 {
-    for(var i=0;i<area.length;i++)
-        nastavBarvu(i,area[i]);
+    var same = true;
+    for(var i=0;i<area.length;i++) {
+        nastavBarvu(i, area[i]);
+        if(lastArea)
+        {
+            if(lastArea[i] !== area[i])
+                same = false;
+        }
+    }
+    lastArea = area;
+    console.log("SAME ARERA? "+same);
 }
 
 function send_keypress(e)
 {
     var udalost = e || window.event;
-    //console.log("DOWN");
-    //connection.send("DOWN "+udalost.keyCode);
 
     $.post('http://localhost:8080/down',{
         code: udalost.keyCode
-    }, function (data) {
-        //console.log("Huh?");
-
-    });
+    }, function (data) {});
 }
 
 function send_keylift(e)
 {
     var udalost = e || window.event;
-    //console.log("UP");
-    //connection.send("UP "+udalost.keyCode);
 
     $.post('http://localhost:8080/up',{
         code: udalost.keyCode
-    }, function (data) {
-        //console.log("Huh?");
-
-    });
+    }, function (data) {});
 }
 
 

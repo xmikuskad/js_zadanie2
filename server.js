@@ -4,14 +4,17 @@ const session = require('express-session');
 const bodyParser = require('body-parser');
 const housenka_class = require('./housenka_server.js')
 const WebSocket = require('ws')
+const fs = require('fs');
+
+const songLink = 'https://docs.google.com/uc?export=open&id=14t2BJcqWToek8niPG4rxZSODfh4ocmuC';
 
 /**
  * Variables
  *
  */
 const app = express()
-var port = 8080;
-var websocket_port = 8082;
+const port = 8080;
+const websocket_port = 8082;
 
 var sessions = []; //Array of active sessions
 var code = 0;
@@ -60,24 +63,47 @@ const wss = new WebSocket.Server({ port: websocket_port })
 
 wss.on('connection', (ws,req) => {
   var game = null;
-  users_conn.push([ws,getSessionID(req.headers.cookie)]);
 
-  for(var i=0;i<sessions.length;i++)
+  console.log("CONNECTED WITH COOKIE "+getSessionID(req.headers.cookie));
+
+  var found = false;
+  for(var j=0;j<users_conn.length;j++)
   {
-    if(sessions[i].sessionID === getSessionID(req.headers.cookie))
-    {
-      console.log("FOUND SESSION");
-      game = new Game(sessions[i],code++,null,new housenka_class());
-      games.push(game);
+    if(users_conn[j][1] === getSessionID(req.headers.cookie)){
+      console.log("DUPLICATE!!!!");
+      //users_conn[j][0] = ws;
+      //found = true;
+      //var foundGame = getGame(getSessionID(req.headers.cookie));
+
+      for(var i=0;i<games.length;i++) {
+        if (games[i].session.sessionID === users_conn[j][1]) {
+          games.splice(games.indexOf(i),1);
+        }
+      }
+      users_conn.splice(users_conn.indexOf(j),1);
+
+
       break;
     }
   }
 
+
+    users_conn.push([ws, getSessionID(req.headers.cookie)]);
+
+    for (var i = 0; i < sessions.length; i++) {
+      if (sessions[i].sessionID === getSessionID(req.headers.cookie)) {
+        console.log("FOUND SESSION");
+        game = new Game(sessions[i], code++, null, new housenka_class());
+        games.push(game);
+        break;
+      }
+    }
+
+
   ws.on('message', message => {
     //console.log(`Received message => ${message}`)
-    //console.log(getSessionID(req.headers.cookie));
     var game = getGame(getSessionID(req.headers.cookie))
-    if(!game.started)
+    if(game && !game.started)
     {
       if(message === 'GETIMG')
       {
@@ -97,30 +123,37 @@ wss.on('connection', (ws,req) => {
 });
 
 
-wss.on('testik', (data) => {
+wss.on('sendArray', (data) => {
 
-  /*for(var j=0;j<users.length;j++)
+  console.log('COUNT OF GAMES '+games.length);
+  //console.log(games)
+  for(var k =0;k<games.length;k++)
   {
-    console.log(users[j].email + " score:"+users[j].score)
-  }*/
+    //console.log(k)
+    console.log("GAME "+k+" started "+games[k].started);
+  }
 
   for(var i=0;i<users_conn.length;i++)
   {
     var game = getGame(users_conn[i][1]);
     if(game!=null && game.started) {
-      /*if(game.session.user)
-        console.log("Connected " + game.session.user.email);*/
+      if(game.session.user)
+        console.log("Connected " + game.session.user.email);
       var ended = game.housenka.pohybHousenky();
       var scoreInfo = updateScore(game,ended);
-      //console.log(scoreInfo);
       users_conn[i][0].send('area '+scoreInfo+' '+JSON.stringify(game.housenka.getArray()));
-      //game.session.user.score++;
+    }
+    else{
+      if(game)
+        console.log('GAME STATUS '+game.started);
+      else
+        console.log('GAME NOT FOUND!');
     }
   }
 })
 
 setInterval(function(){
-  wss.emit('testik','MY MESSAGE');
+  wss.emit('sendArray','MY MESSAGE');
 }, 250);
 
 
@@ -131,7 +164,6 @@ setInterval(function(){
 
 //EXPRESS
 app.use("/static", express.static('./static/'));
-
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({extended: true}));
 app.set('views', __dirname + '/views');
@@ -152,9 +184,7 @@ app.get('/index', function(req, res) {
 app.get('/', function(req, res) {
 
   req.session.cookie.expires = true
-  req.session.cookie.maxAge = 360000; //po 1 hodine vyprsi session ? TODO
-  //var id = req.sessionID;
-  //console.log("EXPRESS "+id);
+  req.session.cookie.maxAge = 20000; //po 6 min vyprsi session ? TODO
 
 
   var is_added = false;
@@ -170,21 +200,8 @@ app.get('/', function(req, res) {
     sessions.push(new MySession(null,0,1,req.sessionID));
   }
 
-  //Prihlasenie
-  /*if(req.session.email)
-  {
-    res.redirect('/logged');
-  }
-  else
-  {
-    res.render('index.html');
-  }
-*/
-
   //Pre teraz staci toto
   res.render('index.html');
-  //res.sendFile('views/index.html', {root: __dirname})
-  //res.end("Test!");
 
 });
 
@@ -208,29 +225,31 @@ app.post('/login',((req, res) => {
 
   for(var i =0;i<users.length;i++)
   {
-    console.log(req.body.email+" | "+req.body.password);
     if(users[i].email === req.body.email && users[i].password === req.body.password)
     {
       req.session.email = req.body.email;
-
-      for(var i=0;i<sessions.length;i++)
+      req.session.name = users[i].name;
+      for(var j=0;j<sessions.length;j++)
       {
-        if(sessions[i].sessionID === req.sessionID)
+        if(sessions[j].sessionID === req.sessionID)
         {
-          sessions[i].user = users[i];
+          sessions[j].user = users[i];
           break;
         }
       }
 
-
+      //refresh stats
+      refreshStats(req.sessionID);
 
       if(req.body.email === 'admin')
         res.redirect('/admin');
       else {
-        res.send("OK");
+        console.log(createLogout(req.session.name));
+        res.send(createLogout(req.session.name));
       }
-      return;
 
+
+      return;
     }
   }
 
@@ -239,7 +258,14 @@ app.post('/login',((req, res) => {
 
 
 app.post('/up',(req,res)=> {
-  //console.log("UP "+req.body.code);
+
+  console.log("GOT UP "+req.body.code);
+
+  if(req.cookie) {
+    console.log(req.cookie.maxAge);
+    console.log(req.cookie);
+  }
+
   var game = getGame(req.sessionID);
 
   if(game!=null)
@@ -249,7 +275,6 @@ app.post('/up',(req,res)=> {
 })
 
 app.post('/down',(req,res)=> {
-  //console.log("DOWN "+req.body.code);
   var game = getGame(req.sessionID);
 
   if(game!=null)
@@ -266,6 +291,7 @@ app.post('/getmenu',(req,res)=> {
 
 app.post('/start',(req,res)=> {
   getGame(req.sessionID).started = true;
+  console.log('Starting game!!');
   res.end();
 })
 
@@ -288,21 +314,72 @@ app.get('/admin',function(req,res){
   }
 });
 
-/*
-app.get('/logout',function(req,res){
+app.get('/download',function (req,res){
 
-  // if the user logs out, destroy all of their individual session
-  // information
-  req.session.destroy(function(err) {
-    if(err) {
-      console.log(err);
-    } else {
-      res.redirect('/');
+  var name= req.sessionID+0;
+  var iter=1;
+  while(true){
+    try {
+      if (fs.existsSync(name)) {
+        name = req.sessionID+iter;
+        iter++;
+      }
+      else
+        break;
+    } catch(err) {
+      console.error(err)
     }
+  }
+  var download = getGame(req.sessionID).housenka;
+
+  fs.writeFile(name, JSON.stringify(download), (err) => {
+    if (err) {
+      throw err;
+    }
+
+    res.set("Content-Type", "application/octet-stream");
+    res.download(name);
+
+    //Zmazanie suboru po 60 sec
+    setTimeout(()=>{
+      try {
+        fs.unlinkSync(name)
+        console.log('deleted '+name);
+      } catch(err) {
+        console.error(err)
+      }
+    },60000)
   });
 
 });
-*/
+
+app.post('/upload',function(req,res){
+
+  var h = new housenka_class();
+  var result = JSON.parse(req.body['obj']);
+
+  for (const [aaa, bbb] of Object.entries(result)) {
+    h[aaa] = bbb;
+  }
+
+  var moving =getGame(req.sessionID).housenka.moving;
+  h.moving = moving;
+  getGame(req.sessionID).housenka = h;
+  res.end();
+});
+
+app.post('/logout',function(req,res){
+
+  var session = getSession(req.sessionID);
+  if(session)
+    session.user = null;
+
+  refreshStats(req.sessionID);
+
+  res.send(createUserPart());
+
+});
+
 
 
 app.listen(port, () => {
@@ -314,16 +391,21 @@ app.listen(port, () => {
  * Helper functions
  */
 
-function createObject(params)
+function refreshStats(sessionID)
 {
-  var obj = {};
-  for(var i=0;i<params.length;i++)
+  for(var i=0;i<users_conn.length;i++)
   {
-    obj[params[i][0]] = params[i][1];
+    if(users_conn[i][1] === sessionID) {
+      var game = getGame(users_conn[i][1]);
+      if (game != null) {
+        var scoreInfo = updateScore(game, false);
+        users_conn[i][0].send('area ' + scoreInfo + ' ' + JSON.stringify(game.housenka.getArray()));
+      }
+      break;
+    }
   }
-
-  return obj;
 }
+
 
 //connect.sid=s%3Ag57IbGaNr6yMz4FbOMasXu4PtRtxkT2A.1SEXmdvIBVuPgMH61F0w5bKs8JTsfk1%2BDnjFHIHwexk
 function getSessionID(raw_text)
@@ -331,6 +413,15 @@ function getSessionID(raw_text)
   //TODO check
   const raw_cookie = raw_text.split("connect.sid=s%3A");
   return raw_cookie[1].split('.')[0];
+}
+
+function getSession(sessionID)
+{
+  for(var i=0;i<sessions.length;i++)
+  {
+    if(sessions[i].sessionID === sessionID)
+      return sessions[i];
+  }
 }
 
 function getGame(sessionID)
@@ -345,11 +436,10 @@ function getGame(sessionID)
   return null;
 }
 
-
 function updateScore(game,ended) {
   var score=0;
   var lvl =1;
-  var maxScore = 0;
+  let maxScore = 0;
   var maxLvl = 1;
   var info = '';
 
@@ -412,6 +502,33 @@ function updateScore(game,ended) {
   return info;
 }
 
+
+/**
+ * HTML to JSON helper functions
+ *
+ */
+
+function createObject(params)
+{
+  var obj = {};
+  for(var i=0;i<params.length;i++)
+  {
+    obj[params[i][0]] = params[i][1];
+  }
+
+  return obj;
+}
+
+function createLogout(name)
+{
+  return createObject([['tag', 'div'], ['id', 'logoutMenu'], ['innerTags', [
+    createLabel('Logged in as ' + name, '30px'),
+    createObject([['tag', 'br']]),
+    createObject([['tag', 'br']]),
+    createButton('Logout', 'logout', 'logout')
+  ]]]);
+}
+
 function createLabel(text,size)
 {
   const labelStyle = createObject([['fontSize', size]]);
@@ -420,7 +537,7 @@ function createLabel(text,size)
 
 function createButton(text,functionName,id)
 {
-  const style = createObject([['width', '190px'], ['height', '50px']]);
+  const style = createObject([['width', '190px'], ['height', '50px'],['fontSize','23px']]);
   return createObject([['tag', 'button'], ['id',id] ,['innerHTML', text], ['style', style], ['onclick', functionName]]);
 }
 
@@ -436,26 +553,31 @@ function createPasswordField(id)
   return createObject([['tag', 'input'], ['id',id] ,['type', 'password'], ['style', style]]);
 }
 
+function createUploadField(id) {
+  const style = createObject([['width', '180px'], ['height', '50px'], ['fontSize', '22px']]);
+  return createObject([['tag', 'input'], ['id',id] ,['type', 'file'], ['style', style]]);
+}
+
 function createStatLabel(id)
 {
   return createObject([['tag', 'h2'], ['id', id], ['innerHTML', 'randomtext']]);
 }
 
-function getUserPart()
+function createUserPart()
 {
   const br = createObject([['tag', 'br']]);
 
   return createObject([['tag', 'div'], ['id', 'userPart'], ['innerTags', [
-    createObject([['tag', 'tr'], ['innerTags', [createLabel('Email')]]]),
+    createObject([['tag', 'tr'], ['innerTags', [createLabel('Email','25px')]]]),
     createObject([['tag', 'tr'], ['innerTags', [createInputField('emailLogin')]]]), br,
-    createObject([['tag', 'tr'], ['innerTags', [createLabel('Password')]]]),
+    createObject([['tag', 'tr'], ['innerTags', [createLabel('Password','25px')]]]),
     createObject([['tag', 'tr'], ['innerTags', [createPasswordField('passwordLogin')]]]), br,
     createObject([['tag', 'tr'], ['innerTags', [createButton('Log in','logIn','passwordBtn')]]]), br,
-    createObject([['tag', 'tr'], ['innerTags', [createLabel('Email')]]]),
+    createObject([['tag', 'tr'], ['innerTags', [createLabel('Email','25px')]]]),
     createObject([['tag', 'tr'], ['innerTags', [createInputField('emailRegistration')]]]), br,
-    createObject([['tag', 'tr'], ['innerTags', [createLabel('Name')]]]),
+    createObject([['tag', 'tr'], ['innerTags', [createLabel('Name','25px')]]]),
     createObject([['tag', 'tr'], ['innerTags', [createInputField('nameRegistration')]]]), br,
-    createObject([['tag', 'tr'], ['innerTags', [createLabel('Password')]]]),
+    createObject([['tag', 'tr'], ['innerTags', [createLabel('Password','25px')]]]),
     createObject([['tag', 'tr'], ['innerTags', [createPasswordField('passwordRegistration')]]]), br,
     createObject([['tag', 'tr'], ['innerTags', [createButton('Register','register','registerBtn')]]]), br
 
@@ -466,13 +588,15 @@ function createTable()
 {
   const br = createObject([['tag', 'br']]);
 
-  const otherPart = createObject([['tag', 'div'], ['innerTags', [
-    createObject([['tag', 'tr'], ['innerTags', [createLabel('PIN')]]]),
+  const otherPart = createObject([['tag', 'div'], ['id','otherPart'], ['innerTags', [
+    createObject([['tag', 'tr'], ['innerTags', [createLabel('PIN','25px')]]]),
     createObject([['tag', 'tr'], ['innerTags', [createInputField('pin')]]]),br,
     createObject([['tag', 'tr'], ['innerTags', [createButton('Connect','todo','connectBtn')]]]), br,
     createObject([['tag', 'tr'], ['innerTags', [createButton('Leaderboards','todo','leaderboardBtn')]]]), br,
-    createObject([['tag', 'tr'], ['innerTags', [createButton('Load game','todo','loadBtn')]]]), br,
-    createObject([['tag', 'tr'], ['innerTags', [createButton('Save game','todo','saveBtn')]]]), br
+    createObject([['tag', 'tr'], ['innerTags', [createButton('Show all games','todo','showGamesBtn')]]]), br,
+    createObject([['tag', 'tr'], ['innerTags', [createUploadField('loadGame')]]]), br,
+    createObject([['tag', 'tr'], ['innerTags', [createButton('Load game','loadGame','loadBtn')]]]), br,
+    createObject([['tag', 'tr'], ['innerTags', [createButton('Save game','saveGame','saveBtn')]]]), br
   ]]]);
 
 
@@ -483,17 +607,23 @@ function createTable()
       ]]]),
       createObject([['tag', 'td'], ['width', '15']]),
       createObject([['tag', 'td'], ['valign', 'top'], ['align', 'left'], ['id', 'stats'], ['innerTags', [
+        createObject([['tag','audio'],['src',songLink],['id','audio'],['loop','true']]),
+        createButton('Turn on audio','changeAudioStatus','audioBtn'),br,
         createStatLabel('maxScoreLabel'), br,
         createStatLabel('maxLvlLabel'), br,
         createStatLabel('scoreLabel'), br,
         createStatLabel('lvlLabel'), br,
-        createObject([['tag', 'tr'], ['innerTags', [createButton('Start game','changeGameStatus','statusBtn')]]]), br,
-        getUserPart(), br, otherPart
+        createObject([['tag', 'tr'], ['innerTags', [createButton('Start new game','changeGameStatus','statusBtn')]]]), br,
+        otherPart, br
+      ]]]),
+      createObject([['tag', 'td'], ['width', '15']]),
+      createObject([['tag', 'td'], ['valign', 'top'], ['align', 'left'], ['id', 'stats'], ['innerTags', [
+        createUserPart()
       ]]])
     ]]])
   ]]]);
 
-  console.log(gamePart);
+  //console.log(gamePart);
 
   return gamePart;
 

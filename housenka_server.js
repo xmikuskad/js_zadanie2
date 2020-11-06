@@ -1,33 +1,12 @@
 // Housenka (Nibbles Revival)
 // implementoval na Vanoce 2007 Milan Sorm
-
+// this functions are from Milan Sorm https://is.stuba.sk/js/herna/housenka.js
 class Housenka {
 
     constructor() {
-        this.klic24Msg = "kľúče";
-        this.ajaxErrorMsg = "Bohužiaľ Váš prehliadač nedokázal na server odoslať dáta cez AJAX, kontaktujte, prosím, prevádzkovateľa systému.";
-        this.live24Msg = "životy";
-        this.klic5Msg = "kľúčov";
-        this.point5Msg = "bodov";
-        this.waitMsg = "Čakajte, prosím, komunikujem so serverom...";
-        this.klic1Msg = "kľúč";
-        this.bludisteMsg = "bludisko";
-        this.accelMsg = "Húsenica prešla už všetkými bludiskami, ktoré sme pre ňu pripravili. Tak to teraz skúsime trochu rýchlejšie, nie?";
-        this.nextLevelMsg = "Húsenica našla cestu do ďalšieho bludiska, ktoré je však oveľa ťažšie. Húsenicu rozbehnete stlačením kurzorovej klávesy.";
-        this.live5Msg = "životov";
-        this.point1Msg = "bod";
-        this.wormFailMsg = "Húsenica nemôže jesť sama seba, našťastie ale máte ďalší život (vraciate sa na začiatok tohto bludiska).";
-        this.keyGotMsg = "Húsenica si naložila kľúč na seba, teraz musí opäť zbierať potravu a&nbsp;zosilnieť, aby uniesla ďalší kľúč.";
-        this.startGameMsg = "Húsenica sa rozbehne stlačením ľubovoľnej kurzorovej klávesy...";
-        this.papejMsg = "Húsenica potrebuje potravu, aby pekne rástla a&nbsp;mohla nájsť kľúče k&nbsp;dverám do ďalšieho bludiska.";
-        this.keyAppearMsg = "Húsenica je dosť silná na zoberanie jedného z&nbsp;kľúčov od dverí k&nbsp;ďalšiemu bludisku, rýchlo pre neho.";
-        this.wallFailMsg = "Náraz do steny húsenicu dosť bolí, našťastie ale máte ďalší život (vraciate sa na začiatok tohto bludiska).";
-        this.point24Msg = "body";
-        this.doorMsg = "Húsenica má už všetky kľúče od dverí do ďalšieho bludiska, ponáhľajme sa teda k&nbsp;nim.";
-        this.live1Msg = "život";
-        this.pauseMsg = "Húsenica chvíľu odpočíva, rozbehnete ju opäť stlačením kurzorovej klávesy.";
-
-        this.imagesName = ['https://i.ibb.co/ZVQkBC2/body.png', 'https://i.ibb.co/ZVQkBC2/body.png', 'https://i.ibb.co/vwp9WJW/food.png', 'https://i.ibb.co/Nj3scGW/wall.png', 'https://i.ibb.co/3TYPkpJ/key.png', 'https://i.ibb.co/Ht6TpSN/door.png', 'https://i.ibb.co/S0NKgFB/head.png'];
+        //Reupload
+        //this.imagesName = ['https://i.ibb.co/ZVQkBC2/body.png', 'https://i.ibb.co/ZVQkBC2/body.png', 'https://i.ibb.co/vwp9WJW/food.png', 'https://i.ibb.co/Nj3scGW/wall.png', 'https://i.ibb.co/3TYPkpJ/key.png', 'https://i.ibb.co/Ht6TpSN/door.png', 'https://i.ibb.co/S0NKgFB/head.png'];
+        this.imagesName = ['https://i.imgur.com/XDNhJgC.png', 'https://i.imgur.com/XDNhJgC.png',  'https://i.imgur.com/YB2yi8z.png', 'https://i.imgur.com/8cFmhlS.png', 'https://i.imgur.com/80MByJd.png', 'https://i.imgur.com/jis5Ayx.png', 'https://i.imgur.com/68lGrA7.png'];
 
         this.xsize = 41;
         this.ysize = 31;
@@ -49,12 +28,10 @@ class Housenka {
         this.plocha = [];
         this.povolena_zmena_smeru = 1;
         this.body = 0;
-        this.obsahy = ['prazdne', 'telicko', 'zradlo', 'zed', 'klic', 'dvere', 'hlavicka'];
         this.zradla_k_dispozici = 0;
         this.telicko = [];
         this.klavesy = [];
         this.smer;		// 0 vpravo, pak po smeru
-        this.hlaska = "";
         this.klicu = 0;
         this.ulozeno_na_klice = 0;
         this.klic_na_scene = false;
@@ -62,8 +39,6 @@ class Housenka {
         this.startuj_hru = 1;
         this.body_na_zacatku_levelu = 0;
         this.ridkost = false;
-
-        this.housenkaIterator = 0;
 
         this.smery = [1, 0, 0, 1, -1, 0, 0, -1];
         this.idx_smeru = [0, 2, 4, 6];
@@ -126,12 +101,11 @@ class Housenka {
 
     dalsiLevel() {
         this.level+=1;
-        this.body += level * bodu_za_level;
-        this.body_na_zacatku_levelu = body;
+        this.body += this.level * this.bodu_za_level;
+        this.body_na_zacatku_levelu = this.body;
 
-        this.zradlo_za_klic += navysit_zradlo_za_klic;
+        this.zradlo_za_klic += this.navysit_zradlo_za_klic;
 
-        this.hlaska = nextLevelMsg;
         this.novaHra();
 
         this.startuj_hru = 1;
@@ -224,7 +198,7 @@ class Housenka {
             var pole = this.volnePole(nesmi_byt);
 
             this.nastavBarvu(this.coords(pole[0], pole[1]), 2);
-            ++this.zradla_k_dispozici;
+            ++(this.zradla_k_dispozici);
         }
     }
 
@@ -311,7 +285,6 @@ class Housenka {
             this.body = this.body_na_zacatku_levelu;
             this.novaHra();
             this.startuj_hru = 1;
-            if (reason == "worm") this.hlaska = this.wormFailMsg; else this.hlaska = this.wallFailMsg;
         } else
             this.zastavHru(reason);
     }
@@ -489,7 +462,6 @@ class Housenka {
             mujlevel = mujlevel % this.levels;
             if (mujlevel == 0) Math.floor(this.rychlost *= this.zrychleni);
             if (this.rychlost < 1) this.rychlost = 1;
-            this.hlaska = this.accelMsg;
         }
 
         results[1] = Math.floor(this.xsize / 2);
