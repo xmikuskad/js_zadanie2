@@ -37,6 +37,10 @@ connection.onmessage = e => {
     }
 }
 
+connection.onclose= () => {
+    connection.send('ENDING!');
+}
+
 window.onload = function() {
 };
 
@@ -49,7 +53,7 @@ document.body.appendChild(a);*/
 
 function getMenu()
 {
-    $.post('http://localhost:8080/getmenu',{}, function (data) {
+    $.get('http://localhost:8080/getmenu',{}, function (data) {
         console.log(data);
         var div = document.getElementById('menu');
         if(div.childElementCount <=0)
@@ -127,7 +131,7 @@ function changeGameStatus() {
 
 function logout()
 {
-    $.post('http://localhost:8080/logout', {
+    $.get('http://localhost:8080/logout', {
         email: undefined,
         name: undefined,
         password: undefined
@@ -156,25 +160,9 @@ function loadGame()
             console.log('loaded!');
         });
 
-        /*$.post({
-            url: 'http://localhost:8080/upload',
-            contentType: 'application/json; charset=utf-8'
-        },JSON.parse(event.target.result))
-            .done(function (response) {
-                console.log("UPLOADED!");
-            });*/
+
     }
     reader.readAsText(data.files[0]);
-    //console.log()
-    //console.log(data.value);
-
-    /*$.getJSON(data.value, function(obj) {
-        console.log(obj.details.ProductID);
-    });*/
-
-    /*$.post('http://localhost:8080/upload', data.files, function (data) {
-        console.log('loaded!');
-    });*/
 }
 
 
@@ -277,6 +265,24 @@ function changeAudioStatus()
     playingAudio = !playingAudio;
 }
 
+function showLeaderboard() {
+    var element = document.getElementById('leaderboard');
+    var btn = document.getElementById('leaderboardBtn');
+    if(element){
+        document.body.removeChild(element);
+        btn.innerText='Show leaderboard';
+    }
+    else
+    {
+        $.get('http://localhost:8080/leaderboard', {}, function (data) {
+            var obj = parseObject(data);
+            console.log(data);
+            document.body.appendChild(obj);
+            btn.innerText='Hide leaderboard';
+        });
+
+    }
+}
 
 function loadLabels()
 {

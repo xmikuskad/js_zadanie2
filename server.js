@@ -6,26 +6,39 @@ const housenka_class = require('./housenka_server.js')
 const WebSocket = require('ws')
 const fs = require('fs');
 
-const songLink = 'https://docs.google.com/uc?export=open&id=14t2BJcqWToek8niPG4rxZSODfh4ocmuC';
-
+const SONG_LINK = 'https://docs.google.com/uc?export=open&id=14t2BJcqWToek8niPG4rxZSODfh4ocmuC';
+const NO_USER = "[N/A]";
+const MAX_LEADERBOARD_COUNT = 25;
+const PORT = 8080;
+const WEBSOCKET_PORT = 8082;
 /**
  * Variables
  *
  */
 const app = express()
-const port = 8080;
-const websocket_port = 8082;
 
 var sessions = []; //Array of active sessions
 var code = 0;
 var users_conn = [];
 var users=[]; //array of Users registered
 var games=[]; //array of Game played
+var leaderboard = [];
+
+var sessionCheckerTimer;
 
 /**
  * Classes
  *
  */
+
+class LeaderboardItem{
+  constructor(name,score,level) {
+    this.name = name;
+    this.score = score;
+    this.level = level;
+  }
+}
+
 
 class User{
   constructor(email,name,pass,score,lvl){
@@ -59,12 +72,14 @@ class Game {
 /**
  * Websocket
  */
-const wss = new WebSocket.Server({ port: websocket_port })
+const wss = new WebSocket.Server({ port: WEBSOCKET_PORT })
 
 wss.on('connection', (ws,req) => {
   var game = null;
 
-  console.log("CONNECTED WITH COOKIE "+getSessionID(req.headers.cookie));
+  //console.log(req);
+  //console.log(ws);
+  console.log("CONNECTED WITH COOKIE " + getSessionID(req.headers.cookie));
 
   var found = false;
   for(var j=0;j<users_conn.length;j++)
@@ -86,34 +101,39 @@ wss.on('connection', (ws,req) => {
       break;
     }
   }
+  //Reset timeru lebo sme ich prave pozreli
+  clearInterval(sessionCheckerTimer);
+  sessionCheckerTimer = null;
+  sessionCheckerTimer =   setInterval(function(){
+    wss.emit('checkSessions');
+  }, 2000);
+  //checkSessions();
 
+  users_conn.push([ws, getSessionID(req.headers.cookie)]);
 
-    users_conn.push([ws, getSessionID(req.headers.cookie)]);
-
-    for (var i = 0; i < sessions.length; i++) {
-      if (sessions[i].sessionID === getSessionID(req.headers.cookie)) {
-        console.log("FOUND SESSION");
-        game = new Game(sessions[i], code++, null, new housenka_class());
-        games.push(game);
-        break;
-      }
+  for (var i = 0; i < sessions.length; i++) {
+    if (sessions[i].sessionID === getSessionID(req.headers.cookie)) {
+      console.log("FOUND SESSION");
+      game = new Game(sessions[i], code++, null, new housenka_class());
+      games.push(game);
+      break;
     }
+  }
 
 
   ws.on('message', message => {
     //console.log(`Received message => ${message}`)
     var game = getGame(getSessionID(req.headers.cookie))
-    if(game && !game.started)
-    {
-      if(message === 'GETIMG')
-      {
-        ws.send('img '+JSON.stringify(game.housenka.getImagesArr()));
+    if (game && !game.started) {
+      if (message === 'GETIMG') {
+        ws.send('img ' + JSON.stringify(game.housenka.getImagesArr()));
         game.housenka.novaHra();
       }
-      if(message === 'READY')
-      {
-        var info = updateScore(game,false)
-        ws.send('area '+info+' '+JSON.stringify(game.housenka.getArray()));
+      if (message === 'READY') {
+        var info = updateScore(game, false)
+        ws.send('area ' + info + ' ' + JSON.stringify(game.housenka.getArray()));
+      } else {
+        console.log("GOT MSG " + message);
       }
     }
 
@@ -122,39 +142,79 @@ wss.on('connection', (ws,req) => {
 
 });
 
+wss.onclose = () => {
+  console.log("closed");
+};
+
+wss.on('checkSessions', ()=>{
+  //console.log('Checking sessions');
+  checkSessions();
+})
 
 wss.on('sendArray', (data) => {
 
-  console.log('COUNT OF GAMES '+games.length);
-  //console.log(games)
-  for(var k =0;k<games.length;k++)
-  {
-    //console.log(k)
-    console.log("GAME "+k+" started "+games[k].started);
-  }
+  //console.log('COUNT OF GAMES '+games.length);
+  //checkSessions();
 
   for(var i=0;i<users_conn.length;i++)
   {
     var game = getGame(users_conn[i][1]);
     if(game!=null && game.started) {
-      if(game.session.user)
-        console.log("Connected " + game.session.user.email);
+      /*if(game.session.user)
+        console.log("Connected " + game.session.user.email);*/
       var ended = game.housenka.pohybHousenky();
       var scoreInfo = updateScore(game,ended);
       users_conn[i][0].send('area '+scoreInfo+' '+JSON.stringify(game.housenka.getArray()));
     }
     else{
-      if(game)
+      /*if(game)
         console.log('GAME STATUS '+game.started);
       else
-        console.log('GAME NOT FOUND!');
+        console.log('GAME NOT FOUND!');*/
     }
   }
+
 })
 
+function checkSessions()
+{
+  for(var k=0;k<users_conn.length;k++)
+  {
+    if(users_conn[k][0].readyState === 3) //Spojenie bolo zrusene
+    {
+      console.log('Deleting user info');
+      var sessionID = users_conn[k][1];
+      //Delete game
+      for(var i=0;i<games.length;i++) {
+        if (games[i].session.sessionID === sessionID) {
+          games.splice(games.indexOf(i),1);
+          break;
+        }
+      }
+      //Delete session
+      for(var j=0;j<sessions.length;j++)
+      {
+        if(sessions[j].sessionID === sessionID)
+        {
+          sessions.splice(sessions.indexOf(j),1);
+        }
+      }
+      //Delete client
+      users_conn.splice(users_conn.indexOf(k),1);
+    }
+  }
+}
+
+//Odosielanie plochy kadzych 250 ms
 setInterval(function(){
   wss.emit('sendArray','MY MESSAGE');
 }, 250);
+
+//Kontrola zrusenych sessons kazdych 10 min
+sessionCheckerTimer = setInterval(function(){
+  wss.emit('checkSessions');
+}, 2000);
+
 
 
 /**
@@ -183,8 +243,10 @@ app.get('/index', function(req, res) {
 
 app.get('/', function(req, res) {
 
+  console.log('express cookie '+req.sessionID);
+
   req.session.cookie.expires = true
-  req.session.cookie.maxAge = 20000; //po 6 min vyprsi session ? TODO
+  req.session.cookie.maxAge = 200000; //po 6 min vyprsi session ? TODO
 
 
   var is_added = false;
@@ -283,7 +345,7 @@ app.post('/down',(req,res)=> {
   res.end()
 })
 
-app.post('/getmenu',(req,res)=> {
+app.get('/getmenu',(req,res)=> {
   console.log("SENGING TABLE");
   res.send(createTable());
   res.end();
@@ -368,7 +430,7 @@ app.post('/upload',function(req,res){
   res.end();
 });
 
-app.post('/logout',function(req,res){
+app.get('/logout',function(req,res){
 
   var session = getSession(req.sessionID);
   if(session)
@@ -380,10 +442,14 @@ app.post('/logout',function(req,res){
 
 });
 
+app.get('/leaderboard', function(req,res) {
+  console.log(createLeaderboard());
+  res.send(createLeaderboard());
+})
 
 
-app.listen(port, () => {
-  console.log(`Example app listening at http://localhost:${port}`)
+app.listen(PORT, () => {
+  console.log(`Example app listening at http://localhost:${PORT}`)
 })
 
 
@@ -407,10 +473,9 @@ function refreshStats(sessionID)
 }
 
 
-//connect.sid=s%3Ag57IbGaNr6yMz4FbOMasXu4PtRtxkT2A.1SEXmdvIBVuPgMH61F0w5bKs8JTsfk1%2BDnjFHIHwexk
+//Ziskanie sessionID z "connect.sid=s%3Ag57IbGaNr6yMz4FbOMasXu4PtRtxkT2A.1SEXmdvIBVuPgMH61F0w5bKs8JTsfk1%2BDnjFHIHwexk"
 function getSessionID(raw_text)
 {
-  //TODO check
   const raw_cookie = raw_text.split("connect.sid=s%3A");
   return raw_cookie[1].split('.')[0];
 }
@@ -487,8 +552,15 @@ function updateScore(game,ended) {
   //Posielame maxScore actScore maxLvl actLvl
   info = maxScore + " " + score + " " + maxLvl + " " + lvl;
 
-  //TODO update leaderboard
   if (ended) {
+    var name;
+    if(user)
+      name = user.name;
+    else
+      name = NO_USER;
+
+    updateLeaderboard(new LeaderboardItem(name,score,lvl));
+
     console.log("remaining " + game.housenka.lives + " lives");
     game.housenka.koncime();
     if (game.housenka.lives <= 0) {
@@ -502,6 +574,27 @@ function updateScore(game,ended) {
   return info;
 }
 
+function updateLeaderboard(item)
+{
+  console.log("Got item, leaderboard count "+leaderboard.length);
+  if(leaderboard.length < 1 )
+  {
+    console.log('IS FIRST ITEM');
+    leaderboard.push(item);
+    return;
+  }
+  console.log("NOT FIRST");
+  if(leaderboard[leaderboard.length-1].score < item.score)
+  {
+    console.log("ADDING");
+
+    leaderboard.push(item);
+    leaderboard.sort((a,b) => (a.score > b.score) ? 1:-1);
+
+    if(leaderboard.length > MAX_LEADERBOARD_COUNT)
+      leaderboard.splice(leaderboard.indexOf(leaderboard.length-1),1);
+  }
+}
 
 /**
  * HTML to JSON helper functions
@@ -537,30 +630,71 @@ function createLabel(text,size)
 
 function createButton(text,functionName,id)
 {
-  const style = createObject([['width', '190px'], ['height', '50px'],['fontSize','23px']]);
+  const style = createObject([['width', '210px'], ['height', '50px'],['fontSize','23px']]);
   return createObject([['tag', 'button'], ['id',id] ,['innerHTML', text], ['style', style], ['onclick', functionName]]);
 }
 
 function createInputField(id)
 {
-  const style = createObject([['width', '180px'], ['height', '50px'], ['fontSize', '22px']]);
+  const style = createObject([['width', '200px'], ['height', '50px'], ['fontSize', '22px']]);
   return createObject([['tag', 'input'], ['id',id] ,['type', 'text'], ['style', style]]);
 }
 
 function createPasswordField(id)
 {
-  const style = createObject([['width', '180px'], ['height', '50px'], ['fontSize', '22px']]);
+  const style = createObject([['width', '200px'], ['height', '50px'], ['fontSize', '22px']]);
   return createObject([['tag', 'input'], ['id',id] ,['type', 'password'], ['style', style]]);
 }
 
 function createUploadField(id) {
-  const style = createObject([['width', '180px'], ['height', '50px'], ['fontSize', '22px']]);
+  const style = createObject([['width', '200px'], ['height', '50px'], ['fontSize', '22px']]);
   return createObject([['tag', 'input'], ['id',id] ,['type', 'file'], ['style', style]]);
 }
 
 function createStatLabel(id)
 {
   return createObject([['tag', 'h2'], ['id', id], ['innerHTML', 'randomtext']]);
+}
+
+function getLeaderboardData()
+{
+  const style = createObject([['fontSize', '35px']]);
+  var header = createObject([['tag','tr'],['innerTags',[
+    createObject([['tag','th'],['width','10%'],['style',style],['innerText','Poradie']]),
+    createObject([['tag','th'],['width','10%'],['style',style],['innerText','Meno']]),
+    createObject([['tag','th'],['width','10%'],['style',style],['innerText','Level']]),
+    createObject([['tag','th'],['width','10%'],['style',style],['innerText','Skore']]),
+  ]]]);
+
+  var obj = [header];
+
+  console.log("LEADERBOARD ITEMS : "+leaderboard.length);
+
+  for(var i=0;i<leaderboard.length;i++)
+  {
+    var item = leaderboard[i];
+    var tableItem = createObject([['tag','tr'],['innerTags',[
+      createObject([['tag','td'],['width','10%'],['style',style],['innerText',i]]),
+      createObject([['tag','td'],['width','30%'],['style',style],['innerText',item.name]]),
+      createObject([['tag','td'],['width','30%'],['style',style],['innerText',item.level]]),
+      createObject([['tag','td'],['width','30%'],['style',style],['innerText',item.score]])
+    ]]]);
+    obj.push(tableItem);
+  }
+
+  return obj;
+}
+
+function createLeaderboard()
+{
+  var style = createObject([['width','1000px']]);
+
+  var leaderboard = createObject([['tag','div'],['id','leaderboard'],['style',style],['innerTags',[
+      createObject([['tag','table'],['innerTags',
+          getLeaderboardData()
+      ]])
+  ]]])
+  return leaderboard;
 }
 
 function createUserPart()
@@ -592,7 +726,7 @@ function createTable()
     createObject([['tag', 'tr'], ['innerTags', [createLabel('PIN','25px')]]]),
     createObject([['tag', 'tr'], ['innerTags', [createInputField('pin')]]]),br,
     createObject([['tag', 'tr'], ['innerTags', [createButton('Connect','todo','connectBtn')]]]), br,
-    createObject([['tag', 'tr'], ['innerTags', [createButton('Leaderboards','todo','leaderboardBtn')]]]), br,
+    createObject([['tag', 'tr'], ['innerTags', [createButton('Show leaderboard','showLeaderboard','leaderboardBtn')]]]), br,
     createObject([['tag', 'tr'], ['innerTags', [createButton('Show all games','todo','showGamesBtn')]]]), br,
     createObject([['tag', 'tr'], ['innerTags', [createUploadField('loadGame')]]]), br,
     createObject([['tag', 'tr'], ['innerTags', [createButton('Load game','loadGame','loadBtn')]]]), br,
@@ -607,7 +741,7 @@ function createTable()
       ]]]),
       createObject([['tag', 'td'], ['width', '15']]),
       createObject([['tag', 'td'], ['valign', 'top'], ['align', 'left'], ['id', 'stats'], ['innerTags', [
-        createObject([['tag','audio'],['src',songLink],['id','audio'],['loop','true']]),
+        createObject([['tag','audio'],['src',SONG_LINK],['id','audio'],['loop','true']]),
         createButton('Turn on audio','changeAudioStatus','audioBtn'),br,
         createStatLabel('maxScoreLabel'), br,
         createStatLabel('maxLvlLabel'), br,
@@ -623,8 +757,6 @@ function createTable()
     ]]])
   ]]]);
 
-  //console.log(gamePart);
 
   return gamePart;
-
 }
