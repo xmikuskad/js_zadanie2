@@ -109,15 +109,16 @@ for(let i=0; i<10000; i++)
 const wss = new WebSocket.Server({ port: WEBSOCKET_PORT })
 
 wss.on('connection', (ws,req) => {
-  var game = null;
-  var found = false;
+  let i;
+  let game = null;
 
-  for(var j=0;j<users_conn.length;j++)
+  //Check if user is not already connected
+  for(let j=0; j<users_conn.length; j++)
   {
+    //If user is connected, delete previous game and session
     if(users_conn[j][1] === getSessionID(req.headers.cookie)){
-      console.log("DUPLICATE!!!!");
 
-      for(var i=0;i<games.length;i++) {
+      for(i = 0; i<games.length; i++) {
         if (games[i].session.sessionID === users_conn[j][1]) {
           pins[games[i].pin] = false;
           games.splice(i,1);
@@ -129,17 +130,19 @@ wss.on('connection', (ws,req) => {
       break;
     }
   }
-  //Reset timeru lebo sme ich prave pozreli
+
+  //Check for sessions which ended and clear them. Reset timer for that
   clearInterval(sessionCheckerTimer);
   sessionCheckerTimer = null;
   sessionCheckerTimer =   setInterval(function(){
     wss.emit('checkSessions');
   }, 2000);
-  //checkSessions();
 
+  //Add connection to client list
   users_conn.push([ws, getSessionID(req.headers.cookie)]);
 
-  for (var i = 0; i < sessions.length; i++) {
+  //Create game for that session
+  for (i = 0; i < sessions.length; i++) {
     if (sessions[i].sessionID === getSessionID(req.headers.cookie)) {
       game = new Game(sessions[i], getAvailablePin(), [], new housenka_class());
       games.push(game);
@@ -149,100 +152,98 @@ wss.on('connection', (ws,req) => {
 
 
   ws.on('message', message => {
-    //console.log(`Received message => ${message}`)
-    var game = getGame(getSessionID(req.headers.cookie))
+    const game = getGame(getSessionID(req.headers.cookie));
+
     if (game && !game.started) {
+      //Sending links for housenka images
       if (message === 'GETIMG') {
         ws.send('img ' + JSON.stringify(game.housenka.getImagesArr()));
         game.housenka.novaHra();
       }
+
+      //Client loaded all images, start game
       if (message === 'READY') {
         var info = updateScore(game, false)
         ws.send('area ' + info + ' ' + JSON.stringify(game.housenka.getArray()));
-      } else {
-        console.log("GOT MSG " + message);
       }
     }
-
 
   })
 
 });
 
-wss.onclose = () => {
-  console.log("closed");
-};
-
+//Check if all session are valid
 wss.on('checkSessions', ()=>{
   checkSessions();
 })
 
+//Send plocha to all users for update
 wss.on('sendArray', (data) => {
+  for (let i = 0; i < users_conn.length; i++) {
+    const game_info = getGameWithSpectators(users_conn[i][1]);
+    let scoreInfo = 'unknown unknown unknown unknown';
 
-  for (var i = 0; i < users_conn.length; i++) {
-    //var game = getGame(users_conn[i][1]);
-    var game_info = getGameWithSpectators(users_conn[i][1]);
-    var scoreInfo = 'unknown unknown unknown unknown';
     if (game_info != null) {
-      var game = game_info[0];
-      var isOwner = game_info[1];
+      const game = game_info[0];
+      const isOwner = game_info[1]; //If user is spectating or he is the master of game
+
       if (game.started) {
-        /*if(game.session.user)
-          console.log("Connected " + game.session.user.email);*/
+        //Update score only for master of game
         if (isOwner) {
-          var ended = game.housenka.pohybHousenky();
+          const ended = game.housenka.pohybHousenky();
           scoreInfo = updateScore(game, ended, isOwner);
         }
-
-        users_conn[i][0].send('area ' + scoreInfo + ' ' + JSON.stringify(game.housenka.getArray()));
-      } else {
-        users_conn[i][0].send('area ' + scoreInfo + ' ' + JSON.stringify(game.housenka.getArray()));
       }
+
+      users_conn[i][0].send('area ' + scoreInfo + ' ' + JSON.stringify(game.housenka.getArray()));
     }
   }
 
 })
 
+//Check if sessions are valid and delete the invalid ones
 function checkSessions()
 {
-  for(var k=0;k<users_conn.length;k++)
+
+  for(let k=0; k<users_conn.length; k++)
   {
-    if(users_conn[k][0].readyState === 3) //Spojenie bolo zrusene
+    if(users_conn[k][0].readyState === 3) //Connection was closed.
     {
-      console.log('Deleting user info');
-      var sessionID = users_conn[k][1];
+      const sessionID = users_conn[k][1];
+
       //Delete game
-      for(var i=0;i<games.length;i++) {
+      for(let i=0; i<games.length; i++) {
         if (games[i].session.sessionID === sessionID) {
           pins[games[i].pin] = false;
           games.splice(games.indexOf(i),1);
           break;
         }
       }
+
       //Delete session
-      for(var j=0;j<sessions.length;j++)
+      for(let j=0; j<sessions.length; j++)
       {
         if(sessions[j].sessionID === sessionID)
         {
           sessions.splice(sessions.indexOf(j),1);
         }
       }
+
       //Delete client
       users_conn.splice(k,1);
     }
   }
 }
 
-//Odosielanie plochy kadzych 250 ms
+//Send plocha every 250 miliseconds - tick server
 setInterval(function(){
   wss.emit('sendArray','MY MESSAGE');
 }, 250);
 
-//Kontrola zrusenych sessons kazdych 10 min
+//Check invalid sessions every minute
 sessionCheckerTimer = setInterval(function(){
   wss.emit('checkSessions');
-}, 2000);
-
+}, 60000);
 
 
 /**
@@ -250,33 +251,23 @@ sessionCheckerTimer = setInterval(function(){
  *
  */
 
-//EXPRESS
 app.use("/static", express.static('./static/'));
+//Added to read reqeust http data - using it for getting sessionID
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({extended: true}));
 app.set('views', __dirname + '/views');
-app.engine('html', require('ejs').renderFile);
 
-//Sessions testing
 app.use(session({
   secret: 'housenka',
   resave: true,
   saveUninitialized: true
 }));
 
-app.get('/index', function(req, res) {
-  res.sendFile('views/index.html', {root: __dirname})
-});
-
 
 app.get('/', function(req, res) {
-
-  //req.session.cookie.expires = true
-  //req.session.cookie.maxAge = 200000; //po 6 min vyprsi session ? TODO
-
-
-  var is_added = false;
-  for(var i=0;i<sessions.length;i++)
+  //Check if session already exists
+  let is_added = false;
+  for(let i=0; i<sessions.length; i++)
   {
     if(sessions[i].sessionID === req.sessionID) {
       is_added = true;
@@ -288,36 +279,37 @@ app.get('/', function(req, res) {
     sessions.push(new MySession(null,0,1,req.sessionID));
   }
 
-  //Pre teraz staci toto
-  res.render('index.html');
-
+  //Send basic html
+  res.sendFile('index.html', { root: app.get('views') })
 });
 
 app.post('/register',(req,res)=> {
-  for(var i =0;i<users.length;i++)
+  //Check if name or email is used
+  for(let i =0; i<users.length; i++)
   {
     if(users[i].email === req.body.email || users[i].name === req.body.name)
     {
-      res.send("NOPE!");
+      res.send("USED");
       return;
     }
   }
 
-  var user = new User(req.body.email,req.body.name,req.body.password,0,1);
+  //Create and add user
+  const user = new User(req.body.email, req.body.name, req.body.password, 0, 1);
   users.push(user);
 
-  console.log(users);
+  res.end();
 })
 
 app.post('/login',((req, res) => {
-
-  for(var i =0;i<users.length;i++)
+  //Check if user with this credentials exists
+  for(let i =0; i<users.length; i++)
   {
     if(users[i].email === req.body.email && users[i].password === req.body.password)
     {
       req.session.email = req.body.email;
       req.session.name = users[i].name;
-      for(var j=0;j<sessions.length;j++)
+      for(let j=0; j<sessions.length; j++)
       {
         if(sessions[j].sessionID === req.sessionID)
         {
@@ -329,14 +321,13 @@ app.post('/login',((req, res) => {
       //refresh stats
       refreshStats(req.sessionID);
 
+      //If user is admin show admin menu othervise who user menu
       if(req.body.email === 'admin') {
-        //TODO ADMIN
         res.send(createAdminMenu());
       }
       else {
         res.send(createLogout(req.session.name));
       }
-
 
       return;
     }
@@ -345,23 +336,21 @@ app.post('/login',((req, res) => {
   res.send('WRONG');
 }))
 
-
 app.post('/up',(req,res)=> {
+  let game;
 
-  var game;
+  //Check if user is master of game or just spectating
   if(req.body.owner === 'true') {
-    console.log('GOT OWNER');
     game = getGame(req.sessionID);
   }
   else{
-    console.log('GOT SPECTATOR');
     game = getGameWithSpectators(req.sessionID)[0];
   }
 
   if(game!=null) {
-    console.log('FOUND GAME!!');
     game.housenka.stiskKlavesy(parseInt(req.body.code));
 
+    //If user connected and is controlling the game too then release key after pressing
     if(req.body.owner === 'false')
       game.housenka.uvolneniKlavesy(parseInt(req.body.code))
   }
@@ -370,7 +359,8 @@ app.post('/up',(req,res)=> {
 })
 
 app.post('/down',(req,res)=> {
-  var game;
+  let game;
+  //If user is master, release pressed key
   if(req.body.owner === 'true')
     game= getGame(req.sessionID);
 
@@ -381,42 +371,30 @@ app.post('/down',(req,res)=> {
 })
 
 app.get('/getmenu',(req,res)=> {
+  //Send html elements
   res.send(createTable());
-  res.end();
 })
 
 app.post('/start',(req,res)=> {
-  getGame(req.sessionID).started = true;
+  //Unpause game updates
+  let game = getGame(req.sessionID);
+  if(game)
+    game.started = true;
   res.end();
 })
 
 app.post('/pause',(req,res)=> {
-  getGame(req.sessionID).started = false;
+  //Pause game updates
+  let game = getGame(req.sessionID);
+  if(game)
+    game.started = false;
   res.end();
 })
 
-app.get('/connect', function(req,res) {
-  var pin = req.body.pin;
-})
-
-app.get('/admin',function(req,res){
-
-  console.log("CALLED ADMIN");
-  if(req.session.email) {
-    res.write('<h1>Hello '+req.session.email+'</h1>');
-    res.write('<a href="/logout">Logout</a>');
-    res.end();
-  } else {
-    res.write('<h1>Please login first.</h1>');
-    res.write('<a href="/">Login</a>');
-    res.end();
-  }
-});
-
 app.get('/download',function (req,res){
-
-  var name= req.sessionID+0;
-  var iter=1;
+  //Generate filename
+  let name = req.sessionID + 0;
+  let iter = 1;
   while(true){
     try {
       if (fs.existsSync(name)) {
@@ -431,19 +409,18 @@ app.get('/download',function (req,res){
   }
   var download = getGame(req.sessionID).housenka;
 
+  //Send file to user
   fs.writeFile(name, JSON.stringify(download), (err) => {
     if (err) {
       throw err;
     }
 
-    res.set("Content-Type", "application/octet-stream");
-    res.download(name);
+    res.download(name,'gamesave');
 
-    //Zmazanie suboru po 60 sec
+    //Delete file after 60 seconds
     setTimeout(()=>{
       try {
         fs.unlinkSync(name)
-        console.log('deleted '+name);
       } catch(err) {
         console.error(err)
       }
@@ -452,123 +429,139 @@ app.get('/download',function (req,res){
 
 });
 
-app.post('/upload',function(req,res){
+app.post('/upload',function(req,res) {
+  //Create new game class
+  const h = new housenka_class();
+  const result = JSON.parse(req.body['obj']);
 
-  var h = new housenka_class();
-  var result = JSON.parse(req.body['obj']);
-
-  for (const [aaa, bbb] of Object.entries(result)) {
-    h[aaa] = bbb;
+  //Set game variables to saved game
+  for (const [key, val] of Object.entries(result)) {
+    h[key] = val;
   }
 
-  var moving =getGame(req.sessionID).housenka.moving;
-  h.moving = moving;
-  getGame(req.sessionID).housenka = h;
+  let game = getGame(req.sessionID);
+  //Pause game if game before was paused
+  if (game) {
+    h.moving = game.housenka.moving;
+    game.housenka = h;
+  }
+
   res.end();
 });
 
 app.get('/logout',function(req,res){
-
-  var session = getSession(req.sessionID);
+  //Destroy user info from session after logout
+  const session = getSession(req.sessionID);
   if(session)
     session.user = null;
 
+  //Update stats
   refreshStats(req.sessionID);
 
   res.send(createUserPart());
-
 });
 
 app.get('/leaderboard', function(req,res) {
+  //Create json of html table and send to client
   res.send(createLeaderboard());
 })
 
 app.get('/activegames',function(req,res) {
+  //Create json of html table of active games and send to client
   res.send(createActiveGames(req.sessionID));
 })
 
 app.get('/showusers',function(req,res) {
-  //TODO check if user is admin
-  if(getSession(req.sessionID).user.name === 'admin'){
-    res.send(createAdminTable());
-  }
-  else {
-    res.end();
+  let session = getSession(req.sessionID);
+  if(session && session.user) {
+    //Check if user is really logged in as admin
+    if (session.user.name === 'admin') {
+      res.send(createAdminTable());
+    } else {
+      res.end();
+    }
   }
 })
 
 app.get('/saveusers', function(req,res){
-  if(getSession(req.sessionID).user.name === 'admin') {
+  let session = getSession(req.sessionID);
+  if(session && session.user) {
+    //Check if user is really logged in as admin
+    if (session.user.name === 'admin') {
 
-    var name= req.sessionID+0;
-    var iter=1;
-    while(true){
-      try {
-        if (fs.existsSync(name)) {
-          name = req.sessionID+iter;
-          iter++;
-        }
-        else
-          break;
-      } catch(err) {
-        console.error(err)
-      }
-    }
-    var download = getUsersData();
-
-    fs.writeFile(name, download, (err) => {
-      if (err) {
-        throw err;
-      }
-
-      res.set("Content-Type", "application/octet-stream");
-      res.download(name);
-
-      //Zmazanie suboru po 60 sec
-      setTimeout(()=>{
+      //Create name for file
+      let name = req.sessionID + 0;
+      let iter = 1;
+      while (true) {
         try {
-          fs.unlinkSync(name)
-          console.log('deleted '+name);
-        } catch(err) {
+          if (fs.existsSync(name)) {
+            name = req.sessionID + iter;
+            iter++;
+          } else
+            break;
+        } catch (err) {
           console.error(err)
         }
-      },120000)
-    });
+      }
+      var download = getUsersData();
 
-    //res.send(getUsersData());
+      //Save file
+      fs.writeFile(name, download, (err) => {
+        if (err) {
+          throw err;
+        }
+
+        //Send file to user
+        res.download(name, 'users.csv');
+
+        //Delete file after 60 seconds
+        setTimeout(() => {
+          try {
+            fs.unlinkSync(name)
+          } catch (err) {
+            console.error(err)
+          }
+        }, 120000)
+      });
+    }
   }
-  else
-    res.end();
+
 })
 
 app.post('/loadusers',function(req,res){
-  if(getSession(req.sessionID).user.name === 'admin') {
-    var result = req.body['obj'];
+  let session = getSession(req.sessionID);
+  if(session && session.user) {
+    //Check if user is really logged in as admin
+    if (getSession(req.sessionID).user.name === 'admin') {
+      const result = req.body['obj'];
 
-    loadUserData(result);
+      //Load data from incoming csv table
+      loadUserData(result);
+    }
   }
 
   res.end();
 })
 
 app.post('/connect',function(req,res){
-
   var pin = req.body.pin;
-  var onlyWatching = req.body.watching;
+  var onlyWatching = req.body.watching; //Is false if player can control the game
 
   var game = getGame(req.sessionID);
-
+  //Check if game exists and pin is right.
+  //You cant watch your own game!
   if(!game || game.pin === pin || !pins[pin])
   {
     res.end();
-    console.log("wrong pin !");
     return;
   }
 
+  //Delte actual game
   pins[game.pin] = false;
   games.splice(games.indexOf(game),1);
 
-  for(var i=0;i<games.length;i++)
+  //Add user as spectator
+  for(let i=0; i<games.length; i++)
   {
     if(games[i].pin === pin)
     {
@@ -577,32 +570,27 @@ app.post('/connect',function(req,res){
     }
   }
 
-  console.log('onlyWatching = '+onlyWatching);
-  console.log(typeof(onlyWatching));
+  //Send control button if user can also control the game
   if(onlyWatching === 'true') {
-    console.log('ONLY DISCONNECT');
     res.send(createDisconnect(pin))
   }
   else {
-    console.log('ADDED CONTROL');
-    //console.log(createControlBtns(pin))
     res.send(createControlBtns(pin));
   }
-  //res.end();
-
 })
 
 app.get('/disconnect',function(req,res) {
 
-  for(var i=0;i<games.length;i++)
+  //Find game which user spectates, delete spectator and create new game
+  for(let i=0; i<games.length; i++)
   {
-    for(var j=0;j<games[i].spectators.length;j++)
+    for(let j=0; j<games[i].spectators.length; j++)
     {
-      var array = games[i].spectators;
+      const array = games[i].spectators;
       if(array[j].sessionID === req.sessionID)
       {
         array.splice(j,1);
-        var game = new Game(getSession(req.sessionID), getAvailablePin(), [], new housenka_class());
+        const game = new Game(getSession(req.sessionID), getAvailablePin(), [], new housenka_class());
         game.housenka.novaHra();
         games.push(game);
 
@@ -612,12 +600,10 @@ app.get('/disconnect',function(req,res) {
     }
   }
 
-  //res.send(getConnectPart());
-
 })
 
 app.listen(PORT, () => {
-  console.log(`Example app listening at http://localhost:${PORT}`)
+  console.log(`Listening at http://localhost:${PORT}`)
 })
 
 
@@ -625,14 +611,15 @@ app.listen(PORT, () => {
  * Helper functions
  */
 
+//Method used for refreshing score labels and plocha for client
 function refreshStats(sessionID)
 {
-  for(var i=0;i<users_conn.length;i++)
+  for(let i=0; i<users_conn.length; i++)
   {
     if(users_conn[i][1] === sessionID) {
-      var game = getGame(users_conn[i][1]);
+      const game = getGame(users_conn[i][1]);
       if (game != null) {
-        var scoreInfo = updateScore(game, false);
+        const scoreInfo = updateScore(game, false);
         users_conn[i][0].send('area ' + scoreInfo + ' ' + JSON.stringify(game.housenka.getArray()));
       }
       break;
@@ -640,18 +627,19 @@ function refreshStats(sessionID)
   }
 }
 
-//Ziskanie sessionID z "connect.sid=s%3Ag57IbGaNr6yMz4FbOMasXu4PtRtxkT2A.1SEXmdvIBVuPgMH61F0w5bKs8JTsfk1%2BDnjFHIHwexk"
+//Getting of sessionID from "connect.sid=s%3Ag57IbGaNr6yMz4FbOMasXu4PtRtxkT2A.1SEXmdvIBVuPgMH61F0w5bKs8JTsfk1%2BDnjFHIHwexk"
 function getSessionID(raw_text)
 {
   const raw_cookie = raw_text.split("connect.sid=s%3A");
   return raw_cookie[1].split('.')[0];
 }
 
+//Get free pin from array
 function getAvailablePin()
 {
-  for(var i=0;i<10000;i++)
+  for(let i=0; i<10000; i++)
   {
-    var pin= '';
+    let pin = '';
     switch (i.toString().length)
     {
       case 1:
@@ -671,7 +659,6 @@ function getAvailablePin()
 
     if(!pins[pin])
     {
-      console.log('PIN '+pin+' is free!');
       pins[pin] = true;
       return pin;
     }
@@ -680,18 +667,20 @@ function getAvailablePin()
   return null;
 }
 
+//Get session object by sessionID
 function getSession(sessionID)
 {
-  for(var i=0;i<sessions.length;i++)
+  for(let i=0; i<sessions.length; i++)
   {
     if(sessions[i].sessionID === sessionID)
       return sessions[i];
   }
 }
 
+//Get game object by sessionID
 function getGame(sessionID)
 {
-  for(var i=0;i<games.length;i++)
+  for(let i=0; i<games.length; i++)
   {
     if(games[i].session.sessionID === sessionID) {
       return games[i];
@@ -701,15 +690,17 @@ function getGame(sessionID)
   return null;
 }
 
+//Get game object by session ID. Checking also sessionIDs in spectators
 function getGameWithSpectators(sessionID)
 {
-  for(var i=0;i<games.length;i++)
+  //First parameter is game and second is true if user is master of the game
+  for(let i=0; i<games.length; i++)
   {
-    var game = games[i];
+    const game = games[i];
     if(game.session.sessionID === sessionID) {
       return [game,true];
     }
-    for(var j=0;j<game.spectators.length;j++){
+    for(let j=0; j<game.spectators.length; j++){
       if(game.spectators[i].sessionID === sessionID) {
         return [game,false];
       }
@@ -719,19 +710,20 @@ function getGameWithSpectators(sessionID)
   return null;
 }
 
+//Update score in session and for user
 function updateScore(game,ended) {
-  var score=0;
-  var lvl =1;
+  let score = 0;
+  let lvl = 1;
   let maxScore = 0;
-  var maxLvl = 1;
-  var info = '';
+  let maxLvl = 1;
+  let info = '';
 
   if (game) {
     score = game.housenka.body;
     lvl = game.housenka.level;
   }
 
-  //Prepisanie najlepsich hodnot za session
+  //Get best values from session
   var session = game.session;
   if (session.score < score) {
     session.score = score;
@@ -740,7 +732,7 @@ function updateScore(game,ended) {
     session.level = lvl
   }
 
-  //Prepisanie najlepsich hodnot za hraca
+  //Override user score
   var user = session.user;
   if (user) {
     if (user.score < score) {
@@ -750,13 +742,13 @@ function updateScore(game,ended) {
       user.level = lvl
     }
 
-    //Zistenie maximalneho score
+    //Find maximum score
     if (session.score > user.score)
       maxScore = session.score;
     else
       maxScore = user.score;
 
-    //Zistenie maximalneho levelu
+    //Find maximum level
     if (session.level > user.level)
       maxLvl = session.level;
     else
@@ -767,26 +759,24 @@ function updateScore(game,ended) {
     maxLvl = session.level;
   }
 
-  //Posielame maxScore actScore maxLvl actLvl
   info = maxScore + " " + score + " " + maxLvl + " " + lvl;
 
+  //If we just lost health
   if (ended) {
-    var name;
+    let name;
     if(user)
       name = user.name;
     else
       name = NO_USER;
 
+    //Try to add agame to leaderboard
     updateLeaderboard(new LeaderboardItem(name,score,lvl));
-
-    console.log("remaining " + game.housenka.lives + " lives");
     game.housenka.koncime();
-    if (game.housenka.lives <= 0) {
-      console.log("YOU LOST!");
 
+    //If we are out of lives, restart the game
+    if (game.housenka.lives <= 0) {
       game.housenka.restartGame();
     }
-
   }
 
   return info;
@@ -794,24 +784,26 @@ function updateScore(game,ended) {
 
 function updateLeaderboard(item)
 {
-  console.log("Got item, leaderboard count "+leaderboard.length);
+  //If there is less then max count then just add item
   if(leaderboard.length < MAX_LEADERBOARD_COUNT )
   {
     leaderboard.push(item);
-    leaderboard.sort((a,b) => (a.score > b.score) ? 1:-1);
+    leaderboard.sort((a,b) => (a.score < b.score) ? 1:-1);
     return;
   }
 
+  //If there are more items then add and sort items
   if(leaderboard[leaderboard.length-1].score < item.score)
   {
     leaderboard.push(item);
-    leaderboard.sort((a,b) => (a.score > b.score) ? 1:-1);
+    leaderboard.sort((a,b) => (a.score < b.score) ? 1:-1);
 
     if(leaderboard.length > MAX_LEADERBOARD_COUNT)
       leaderboard.splice(leaderboard.indexOf(leaderboard.length-1),1);
   }
 }
 
+//This function formats data for csv file
 function getUsersData()
 {
   var data = 'meno,email,heslo,maxscore,maxlvl\r\n';
@@ -824,25 +816,19 @@ function getUsersData()
   return data;
 }
 
+//This function parse data from csv
 function loadUserData(data)
 {
-  console.log(data);
-
   users = [];
+  const users_raw = data.split('\r\n');
 
-  var users_raw = data.split('\r\n');
-
-  for(var i=1;i<users_raw.length;i++)
+  for(let i=1; i<users_raw.length; i++)
   {
-    var user_data = users_raw[i].split(',');
-
+    const user_data = users_raw[i].split(',');
     if(user_data.length === 5) {
       users.push(new User(user_data[0],user_data[1],user_data[2],user_data[3],user_data[4]));
     }
-
   }
-
-
 }
 
 /**
@@ -850,10 +836,11 @@ function loadUserData(data)
  *
  */
 
+//Basic function for creating generic html object to json format
 function createObject(params)
 {
   var obj = {};
-  for(var i=0;i<params.length;i++)
+  for(let i=0; i<params.length; i++)
   {
     obj[params[i][0]] = params[i][1];
   }
@@ -861,6 +848,7 @@ function createObject(params)
   return obj;
 }
 
+//Create disconnect button for spectating
 function createDisconnect(pin) {
   var obj = createObject([['tag', 'div'], ['innerTags', [
     createObject([['tag', 'tr'], ['innerTags', [
@@ -875,6 +863,7 @@ function createDisconnect(pin) {
   return obj;
 }
 
+//Create control buttons for game control
 function createControlBtns(pin)
 {
   var obj = createObject([['tag', 'div'], ['innerTags', [
@@ -895,6 +884,7 @@ function createControlBtns(pin)
   return obj;
 }
 
+//Create admin table with active users and games
 function getAdminTableData()
 {
   const style = createObject([['fontSize', '35px']]);
@@ -906,11 +896,12 @@ function getAdminTableData()
 
   var obj = [header];
 
-  for(var i=0;i<games.length;i++) {
+  for(let i=0; i<games.length; i++) {
 
-    var item = games[i];
-    var name;
+    const item = games[i];
+    let name;
 
+    //Check for user name
     if(item.session.user){
       name = item.session.user.name;
     }
@@ -929,6 +920,7 @@ function getAdminTableData()
   return obj;
 }
 
+//Create admin table
 function createAdminTable()
 {
   var style = createObject([['width','1000px']]);
@@ -941,6 +933,7 @@ function createAdminTable()
   return leaderboard;
 }
 
+//Get data for active games table
 function getGamesData(sessionID)
 {
   const style = createObject([['fontSize', '35px']]);
@@ -952,10 +945,11 @@ function getGamesData(sessionID)
 
   var obj = [header];
 
-  for(var i=0;i<games.length;i++)
+  for(let i=0; i<games.length; i++)
   {
-    var item = games[i];
-    var connectBtn;
+    const item = games[i];
+    let connectBtn;
+    //You cant watch your game!
     if(item.session.sessionID === sessionID) {
       connectBtn = createObject([['tag','div']]);
     }
@@ -963,13 +957,13 @@ function getGamesData(sessionID)
       connectBtn = createButton('Watch game','watchGame',item.pin);
     }
 
-    var username;
+    let username;
 
     if(item.session.user)
       username = item.session.user.name;
     else
       username = NO_USER;
-    //games[i].pin
+
     var tableItem = createObject([['tag','tr'],['innerTags',[
       createObject([['tag','td'],['width','30%'],['align','center'],['style',style],['innerText',i+1]]),
       createObject([['tag','td'],['width','40%'],['align','center'],['style',style],['innerText',username]]),
@@ -983,6 +977,7 @@ function getGamesData(sessionID)
   return obj;
 }
 
+//Create table with active games
 function createActiveGames(sessionID) {
   var style = createObject([['width', '500px']]);
 
@@ -995,6 +990,7 @@ function createActiveGames(sessionID) {
   return activeGames;
 }
 
+//Create all parts of admin UI
 function createAdminMenu() {
 
   const br = createObject([['tag', 'br']]);
@@ -1011,6 +1007,7 @@ function createAdminMenu() {
   return obj;
 }
 
+//Create logout part
 function createLogout(name)
 {
   return createObject([['tag', 'div'], ['id', 'logoutMenu'], ['innerTags', [
@@ -1021,40 +1018,47 @@ function createLogout(name)
   ]]]);
 }
 
+//Generic create label method
 function createLabel(text,size)
 {
   const labelStyle = createObject([['fontSize', size]]);
   return createObject([['tag','span'],['innerText',text],['display','inline-block'],['style',labelStyle]]);
 }
 
+//Generic create button method
 function createButton(text,functionName,id)
 {
   const style = createObject([['width', '210px'], ['height', '50px'],['fontSize','23px']]);
   return createObject([['tag', 'button'], ['id',id] ,['innerHTML', text], ['style', style], ['onclick', functionName]]);
 }
 
+//Generic create input method for text fields
 function createInputField(id)
 {
   const style = createObject([['width', '200px'], ['height', '50px'], ['fontSize', '22px']]);
   return createObject([['tag', 'input'], ['id',id] ,['type', 'text'], ['style', style]]);
 }
 
+//Generic create input method for password fields
 function createPasswordField(id)
 {
   const style = createObject([['width', '200px'], ['height', '50px'], ['fontSize', '22px']]);
   return createObject([['tag', 'input'], ['id',id] ,['type', 'password'], ['style', style]]);
 }
 
+//Generic create input method for upload fields
 function createUploadField(id) {
   const style = createObject([['width', '200px'], ['height', '50px'], ['fontSize', '22px']]);
   return createObject([['tag', 'input'], ['id',id] ,['type', 'file'], ['style', style]]);
 }
 
+//Generic create label method
 function createStatLabel(id)
 {
   return createObject([['tag', 'h2'], ['id', id], ['innerHTML', 'randomtext']]);
 }
 
+//Get all data for leaderboard table
 function getLeaderboardData()
 {
   const style = createObject([['fontSize', '35px']]);
@@ -1067,9 +1071,9 @@ function getLeaderboardData()
 
   var obj = [header];
 
-  for(var i=0;i<leaderboard.length;i++)
+  for(let i=0; i<leaderboard.length; i++)
   {
-    var item = leaderboard[i];
+    const item = leaderboard[i];
     var tableItem = createObject([['tag','tr'],['innerTags',[
       createObject([['tag','td'],['width','10%'],['align','center'],['style',style],['innerText',i+1]]),
       createObject([['tag','td'],['width','30%'],['align','center'],['style',style],['innerText',item.name]]),
@@ -1082,6 +1086,7 @@ function getLeaderboardData()
   return obj;
 }
 
+//Create leaderboard table
 function createLeaderboard()
 {
   var style = createObject([['width','1000px']]);
@@ -1094,6 +1099,7 @@ function createLeaderboard()
   return leaderboard;
 }
 
+//Create login and registration part of UI
 function createUserPart()
 {
   const br = createObject([['tag', 'br']]);
@@ -1115,6 +1121,7 @@ function createUserPart()
   ]]]);
 }
 
+//Create connect part of UI
 function getConnectPart()
 {
   const br = createObject([['tag', 'br']]);
@@ -1128,20 +1135,21 @@ function getConnectPart()
   return connectPart;
 }
 
-function createTable()
-{
+//Combine and create the whole starting UI
+function createTable() {
   const br = createObject([['tag', 'br']]);
-  const startBtnStyle = createObject([['width', '210px'], ['height', '50px'],['fontSize','23px'],['background-color','green']]);
-  var startButton = createObject([['tag', 'button'], ['id','statusBtn'] ,['innerHTML', 'Start new game'], ['style', startBtnStyle], ['onclick', 'changeGameStatus']]);
+  const labelStyle = createObject([['fontSize', '35px']]);
+  const startBtnStyle = createObject([['width', '210px'], ['height', '50px'], ['fontSize', '23px'], ['background-color', 'green']]);
+  var startButton = createObject([['tag', 'button'], ['id', 'statusBtn'], ['innerHTML', 'Start new game'], ['style', startBtnStyle], ['onclick', 'changeGameStatus']]);
 
 
-  const otherPart = createObject([['tag', 'div'], ['id','otherPart'], ['innerTags', [
-    createObject([['tag','div'],['id','connectPart'],['innerTags',[getConnectPart()]]]),
-    createObject([['tag', 'tr'], ['innerTags', [createButton('Show leaderboard','showLeaderboard','leaderboardBtn')]]]), br,
-    createObject([['tag', 'tr'], ['innerTags', [createButton('Show all games','showActiveGames','showGamesBtn')]]]), br,
+  const otherPart = createObject([['tag', 'div'], ['id', 'otherPart'], ['innerTags', [
+    createObject([['tag', 'div'], ['id', 'connectPart'], ['innerTags', [getConnectPart()]]]),
+    createObject([['tag', 'tr'], ['innerTags', [createButton('Show leaderboard', 'showLeaderboard', 'leaderboardBtn')]]]), br,
+    createObject([['tag', 'tr'], ['innerTags', [createButton('Show all games', 'showActiveGames', 'showGamesBtn')]]]), br,
     createObject([['tag', 'tr'], ['innerTags', [createUploadField('loadGame')]]]), br,
-    createObject([['tag', 'tr'], ['innerTags', [createButton('Load game','loadGame','loadBtn')]]]), br,
-    createObject([['tag', 'tr'], ['innerTags', [createButton('Save game','saveGame','saveBtn')]]]), br
+    createObject([['tag', 'tr'], ['innerTags', [createButton('Load game', 'loadGame', 'loadBtn')]]]), br,
+    createObject([['tag', 'tr'], ['innerTags', [createButton('Save game', 'saveGame', 'saveBtn')]]]), br
   ]]]);
 
 
@@ -1152,8 +1160,8 @@ function createTable()
       ]]]),
       createObject([['tag', 'td'], ['width', '15']]),
       createObject([['tag', 'td'], ['valign', 'top'], ['align', 'left'], ['innerTags', [
-        createObject([['tag','audio'],['src',SONG_LINK],['id','audio'],['loop','true']]),
-        createButton('Turn on audio','changeAudioStatus','audioBtn'),br,
+        //createObject([['tag', 'span'], ['id', 'errorLabel'], ['display', 'inline-block'], ['style', labelStyle]]),
+        createButton('Turn on audio', 'changeAudioStatus', 'audioBtn'), br,
         createStatLabel('maxScoreLabel'), br,
         createStatLabel('maxLvlLabel'), br,
         createStatLabel('scoreLabel'), br,
@@ -1165,9 +1173,14 @@ function createTable()
       createObject([['tag', 'td'], ['valign', 'top'], ['align', 'left'], ['innerTags', [
         createUserPart()
       ]]])
-    ]]])
+    ]]]),
+    createObject([['tag', 'audio'], ['src', SONG_LINK], ['id', 'audio'], ['loop', 'true']]),
   ]]]);
 
+  const menu = createObject([['tag', 'div'], ['innerTags', [
+    createObject([['tag', 'span'], ['id', 'errorLabel'], ['display', 'inline-block'], ['style', labelStyle]]),
+      gamePart
+  ]]])
 
-  return gamePart;
+  return menu;
 }
