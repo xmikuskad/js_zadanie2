@@ -31,10 +31,6 @@ connection.onmessage = e => {
     }
 }
 
-connection.onclose= () => {
-    connection.send('ENDING!');
-}
-
 window.onload = function() {
 };
 
@@ -286,6 +282,8 @@ function watchGame(event)
 function connect(pinInc)
 {
     var watching,pin;
+    var startBtn= document.getElementById('statusBtn');
+    var place = document.getElementById('connectPart');
 
     if(typeof(pinInc) === 'object') {
         watching = false;
@@ -302,9 +300,41 @@ function connect(pinInc)
         pin: pin,
         watching: watching
     }, function (data) {
-        console.log(data);
-        //TODO disconnect btn
+        console.log('DATA TYPE '+typeof(data));
+        if(typeof(data) !== 'string') {
+            startBtn.style.display = 'none';
+            while (place.firstChild) {
+                place.removeChild(place.lastChild);
+            }
+
+            place.appendChild(parseObject(data));
+        }
     });
+}
+
+function disconnect()
+{
+    var place = document.getElementById('connectPart');
+    var startBtn= document.getElementById('statusBtn');
+    var onlyWatching = true;
+
+    if(place.childElementCount > 1)
+        onlyWatching = false;
+
+    $.get('http://localhost:8080/disconnect', {}, function (data) {
+        startBtn.style.display = null;
+        startBtn.innerText = 'Start new game'
+
+        console.log(connection.readyState);
+
+        while(place.firstChild)
+        {
+            place.removeChild(place.lastChild);
+        }
+
+        place.appendChild(parseObject(data));
+    });
+
 }
 
 function todo(a){
@@ -392,10 +422,13 @@ function refreshLabels(comm)
     maxLvl = comm[3];
     lvl = comm[4];
 
-    maxScoreLabel.innerHTML = 'Max score is '+maxScore;
-    maxLvlLabel.innerHTML = 'Max lvl is '+maxLvl;
-    scoreLabel.innerHTML = 'Act score is '+score;
-    lvlLabel.innerHTML = 'Act lvl is '+lvl;
+    if(maxScore !== 'unknown') {
+
+        maxScoreLabel.innerHTML = 'Max score is ' + maxScore;
+        maxLvlLabel.innerHTML = 'Max lvl is ' + maxLvl;
+        scoreLabel.innerHTML = 'Act score is ' + score;
+        lvlLabel.innerHTML = 'Act lvl is ' + lvl;
+    }
 }
 
 function parseObject(obj)

@@ -120,10 +120,10 @@ wss.on('connection', (ws,req) => {
       for(var i=0;i<games.length;i++) {
         if (games[i].session.sessionID === users_conn[j][1]) {
           pins[games[i].pin] = false;
-          games.splice(games.indexOf(i),1);
+          games.splice(i,1);
         }
       }
-      users_conn.splice(users_conn.indexOf(j),1);
+      users_conn.splice(j,1);
 
 
       break;
@@ -179,25 +179,25 @@ wss.on('checkSessions', ()=>{
 
 wss.on('sendArray', (data) => {
 
-  for(var i=0;i<users_conn.length;i++)
-  {
+  for (var i = 0; i < users_conn.length; i++) {
     //var game = getGame(users_conn[i][1]);
     var game_info = getGameWithSpectators(users_conn[i][1]);
-    var game = game_info[0];
-    var isOwner = game_info[1];
     var scoreInfo = 'unknown unknown unknown unknown';
-    if(game!=null && game.started) {
-      /*if(game.session.user)
-        console.log("Connected " + game.session.user.email);*/
-      if(isOwner) {
-        var ended = game.housenka.pohybHousenky();
-        scoreInfo = updateScore(game, ended, isOwner);
-      }
+    if (game_info != null) {
+      var game = game_info[0];
+      var isOwner = game_info[1];
+      if (game.started) {
+        /*if(game.session.user)
+          console.log("Connected " + game.session.user.email);*/
+        if (isOwner) {
+          var ended = game.housenka.pohybHousenky();
+          scoreInfo = updateScore(game, ended, isOwner);
+        }
 
         users_conn[i][0].send('area ' + scoreInfo + ' ' + JSON.stringify(game.housenka.getArray()));
-    }
-    else{
-      //Zatial nic ?
+      } else {
+        users_conn[i][0].send('area ' + scoreInfo + ' ' + JSON.stringify(game.housenka.getArray()));
+      }
     }
   }
 
@@ -228,7 +228,7 @@ function checkSessions()
         }
       }
       //Delete client
-      users_conn.splice(users_conn.indexOf(k),1);
+      users_conn.splice(k,1);
     }
   }
 }
@@ -548,13 +548,14 @@ app.post('/connect',function(req,res){
 
   var game = getGame(req.sessionID);
 
-  if(game.pin === pin)
+  if(!game || game.pin === pin || !pins[pin])
   {
     res.end();
     console.log("wrong pin !");
     return;
   }
 
+  pins[game.pin] = false;
   games.splice(games.indexOf(game),1);
 
   for(var i=0;i<games.length;i++)
@@ -571,7 +572,33 @@ app.post('/connect',function(req,res){
     res.send(createControlBtns());
   else
     res.end();*/
+  console.log(createDisconnect(pin));
+  res.send(createDisconnect(pin))
   res.end();
+
+})
+
+app.get('/disconnect',function(req,res) {
+
+  for(var i=0;i<games.length;i++)
+  {
+    for(var j=0;j<games[i].spectators.length;j++)
+    {
+      var array = games[i].spectators;
+      if(array[j].sessionID === req.sessionID)
+      {
+        array.splice(j,1);
+        var game = new Game(getSession(req.sessionID), getAvailablePin(), [], new housenka_class());
+        game.housenka.novaHra();
+        games.push(game);
+
+        res.send(getConnectPart());
+        return;
+      }
+    }
+  }
+
+  //res.send(getConnectPart());
 
 })
 
@@ -820,6 +847,20 @@ function createObject(params)
   return obj;
 }
 
+function createDisconnect(pin) {
+  var obj = createObject([['tag', 'div'], ['innerTags', [
+    createObject([['tag', 'tr'], ['innerTags', [
+      createLabel('Connected to ' + pin, '30px')
+    ]]]),
+    createObject([['tag', 'tr'], ['innerTags', [
+      createButton('Disconnect', 'disconnect', 'disconnectBtn')
+    ]]]),
+    createObject([['tag', 'br']])
+  ]]])
+
+  return obj;
+}
+
 function createControlBtns()
 {
 }
@@ -828,10 +869,9 @@ function getAdminTableData()
 {
   const style = createObject([['fontSize', '35px']]);
   var header = createObject([['tag','tr'],['innerTags',[
-    createObject([['tag','th'],['width','30%'],['style',style],['innerText','Name']]),
-    createObject([['tag','th'],['width','25%'],['style',style],['innerText','Session score']]),
-    createObject([['tag','th'],['width','25%'],['style',style],['innerText','Session lvl']]),
-    createObject([['tag','th'],['width','20%'],['style',style],['innerText','PIN']])
+    createObject([['tag','th'],['width','40%'],['style',style],['innerText','Name']]),
+    createObject([['tag','th'],['width','45%'],['style',style],['innerText','Session']]),
+    createObject([['tag','th'],['width','15%'],['style',style],['innerText','PIN']])
   ]]]);
 
   var obj = [header];
@@ -850,9 +890,8 @@ function getAdminTableData()
 
     var tableItem = createObject([['tag','tr'],['innerTags',[
       createObject([['tag','td'],['width','40%'],['align','center'],['style',style],['innerText',name]]),
-      createObject([['tag','td'],['width','20%'],['align','center'],['style',style],['innerText',item.session.score]]),
-      createObject([['tag','td'],['width','20%'],['align','center'],['style',style],['innerText',item.session.level]]),
-      createObject([['tag','td'],['width','20%'],['align','center'],['style',style],['innerText',item.pin]]),
+      createObject([['tag','td'],['width','45%'],['align','center'],['style',style],['innerText',item.session.sessionID]]),
+      createObject([['tag','td'],['width','15%'],['align','center'],['style',style],['innerText',item.pin]]),
     ]]]);
     obj.push(tableItem);
   }
@@ -864,8 +903,8 @@ function createAdminTable()
 {
   var style = createObject([['width','1000px']]);
 
-  var leaderboard = createObject([['tag','div'],['id','adminTable'],['style',style],['innerTags',[
-    createObject([['tag','table'],['innerTags',
+  var leaderboard = createObject([['tag','div'],['id','adminTable'],['innerTags',[
+    createObject([['tag','table'],['width','100%'],['style',style],['innerTags',
       getAdminTableData()
     ]])
   ]]])
@@ -1046,17 +1085,28 @@ function createUserPart()
   ]]]);
 }
 
-function createTable()
+function getConnectPart()
 {
   const br = createObject([['tag', 'br']]);
 
+  const connectPart = createObject([['tag','div'],['innerTags',[
+    createObject([['tag', 'tr'], ['innerTags', [createLabel('PIN','25px')]]]),
+    createObject([['tag', 'tr'], ['innerTags', [createInputField('pin')]]]),br,
+    createObject([['tag', 'tr'], ['innerTags', [createButton('Connect','connect','connectBtn')]]])
+  ]]]);
+
+  return connectPart;
+}
+
+function createTable()
+{
+  const br = createObject([['tag', 'br']]);
   const startBtnStyle = createObject([['width', '210px'], ['height', '50px'],['fontSize','23px'],['background-color','green']]);
   var startButton = createObject([['tag', 'button'], ['id','statusBtn'] ,['innerHTML', 'Start new game'], ['style', startBtnStyle], ['onclick', 'changeGameStatus']]);
 
+
   const otherPart = createObject([['tag', 'div'], ['id','otherPart'], ['innerTags', [
-    createObject([['tag', 'tr'], ['innerTags', [createLabel('PIN','25px')]]]),
-    createObject([['tag', 'tr'], ['innerTags', [createInputField('pin')]]]),br,
-    createObject([['tag', 'tr'], ['innerTags', [createButton('Connect','connect','connectBtn')]]]), br,
+    createObject([['tag','div'],['id','connectPart'],['innerTags',[getConnectPart()]]]),
     createObject([['tag', 'tr'], ['innerTags', [createButton('Show leaderboard','showLeaderboard','leaderboardBtn')]]]), br,
     createObject([['tag', 'tr'], ['innerTags', [createButton('Show all games','showActiveGames','showGamesBtn')]]]), br,
     createObject([['tag', 'tr'], ['innerTags', [createUploadField('loadGame')]]]), br,
@@ -1071,7 +1121,7 @@ function createTable()
         createObject([['tag', 'canvas'], ['width', '1968'], ['height', '1488'], ['id', 'canvas']])
       ]]]),
       createObject([['tag', 'td'], ['width', '15']]),
-      createObject([['tag', 'td'], ['valign', 'top'], ['align', 'left'], ['id', 'stats'], ['innerTags', [
+      createObject([['tag', 'td'], ['valign', 'top'], ['align', 'left'], ['innerTags', [
         createObject([['tag','audio'],['src',SONG_LINK],['id','audio'],['loop','true']]),
         createButton('Turn on audio','changeAudioStatus','audioBtn'),br,
         createStatLabel('maxScoreLabel'), br,
@@ -1082,7 +1132,7 @@ function createTable()
         otherPart, br
       ]]]),
       createObject([['tag', 'td'], ['width', '15']]),
-      createObject([['tag', 'td'], ['valign', 'top'], ['align', 'left'], ['id', 'stats'], ['innerTags', [
+      createObject([['tag', 'td'], ['valign', 'top'], ['align', 'left'], ['innerTags', [
         createUserPart()
       ]]])
     ]]])
