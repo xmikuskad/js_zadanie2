@@ -126,6 +126,7 @@ function changeGameStatus() {
 
 function logout()
 {
+    //TODO check admin things and delete
     $.get('http://localhost:8080/logout', {
         email: undefined,
         name: undefined,
@@ -183,7 +184,6 @@ function loadGame()
     reader.readAsText(data.files[0]);
 }
 
-
 function saveGame()
 {
     window.location = 'http://localhost:8080/download';
@@ -199,14 +199,112 @@ function changeUserPart(newObj)
     userDiv.appendChild(parseObject(newObj));
 }
 
-function connectTable(event)
+function changeAudioStatus()
 {
+    console.log("Changing status!");
+
+    var audio = document.getElementById('audio');
+    var btn = document.getElementById('audioBtn');
+
+    if(playingAudio){
+        audio.pause();
+        btn.innerText = 'Turn on audio';
+    }
+    else
+    {
+        audio.play();
+        btn.innerText = 'Turn off audio';
+    }
+
+    playingAudio = !playingAudio;
+}
+
+function showLeaderboard() {
+    var element = document.getElementById('leaderboard');
+    var btn = document.getElementById('leaderboardBtn');
+    if(element){
+        document.body.removeChild(element);
+        btn.innerText='Show leaderboard';
+    }
+    else
+    {
+        $.get('http://localhost:8080/leaderboard', {}, function (data) {
+            var obj = parseObject(data);
+            console.log(data);
+            document.body.appendChild(obj);
+            btn.innerText='Hide leaderboard';
+        });
+
+    }
+}
+
+function showActiveGames() {
+    var element = document.getElementById('showActiveGames');
+    var btn = document.getElementById('showGamesBtn');
+    if(element){
+        document.body.removeChild(element);
+        btn.innerText='Show all games';
+    }
+    else
+    {
+        $.get('http://localhost:8080/activegames', {}, function (data) {
+            var obj = parseObject(data);
+            console.log(data);
+            document.body.appendChild(obj);
+            btn.innerText='Hide all games';
+        });
+
+    }
+}
+
+
+function showUsers(){
+    var element = document.getElementById('adminTable');
+    var btn = document.getElementById('showUsersBtn');
+
+    if(element) {
+        document.body.removeChild(element);
+        btn.innerText='Show users';
+    }
+    else {
+        $.get('http://localhost:8080/showusers', {}, function (data) {
+            var obj = parseObject(data);
+            console.log(data);
+            document.body.appendChild(obj);
+            btn.innerText='Hide users';
+        });
+    }
+}
+
+function watchGame(event)
+{
+    //connect(event.target.id);
+    console.log('Watching game ' + event.target.id);
     connect(event.target.id);
 }
 
-function connect(pin)
+function connect(pinInc)
 {
+    var watching,pin;
+
+    if(typeof(pinInc) === 'object') {
+        watching = false;
+        var input =  document.getElementById('pin');
+        pin = input.value;
+    }
+    else {
+        watching = true;
+        pin = pinInc;
+    }
     console.log("CONNECTING TO "+pin);
+
+    $.post('http://localhost:8080/connect', {
+        pin: pin,
+        watching: watching
+    }, function (data) {
+        console.log(data);
+        //TODO disconnect btn
+    });
 }
 
 function todo(a){
@@ -273,64 +371,6 @@ function md5(inputString) {
     return rh(a)+rh(b)+rh(c)+rh(d);
 }
 
-function changeAudioStatus()
-{
-    console.log("Changing status!");
-
-    var audio = document.getElementById('audio');
-    var btn = document.getElementById('audioBtn');
-
-    if(playingAudio){
-        audio.pause();
-        btn.innerText = 'Turn on audio';
-    }
-    else
-    {
-        audio.play();
-        btn.innerText = 'Turn off audio';
-    }
-
-    playingAudio = !playingAudio;
-}
-
-function showLeaderboard() {
-    var element = document.getElementById('leaderboard');
-    var btn = document.getElementById('leaderboardBtn');
-    if(element){
-        document.body.removeChild(element);
-        btn.innerText='Show leaderboard';
-    }
-    else
-    {
-        $.get('http://localhost:8080/leaderboard', {}, function (data) {
-            var obj = parseObject(data);
-            console.log(data);
-            document.body.appendChild(obj);
-            btn.innerText='Hide leaderboard';
-        });
-
-    }
-}
-
-function showActiveGames() {
-    var element = document.getElementById('showActiveGames');
-    var btn = document.getElementById('showGamesBtn');
-    if(element){
-        document.body.removeChild(element);
-        btn.innerText='Show all games';
-    }
-    else
-    {
-        $.get('http://localhost:8080/activegames', {}, function (data) {
-            var obj = parseObject(data);
-            console.log(data);
-            document.body.appendChild(obj);
-            btn.innerText='Hide all games';
-        });
-
-    }
-}
-
 function loadLabels()
 {
     maxScoreLabel = document.getElementById('maxScoreLabel');
@@ -357,7 +397,6 @@ function refreshLabels(comm)
     scoreLabel.innerHTML = 'Act score is '+score;
     lvlLabel.innerHTML = 'Act lvl is '+lvl;
 }
-
 
 function parseObject(obj)
 {

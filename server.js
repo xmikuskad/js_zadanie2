@@ -8,9 +8,10 @@ const fs = require('fs');
 
 const SONG_LINK = 'https://docs.google.com/uc?export=open&id=14t2BJcqWToek8niPG4rxZSODfh4ocmuC';
 const NO_USER = "[N/A]";
-const MAX_LEADERBOARD_COUNT = 25;
+const MAX_LEADERBOARD_COUNT = 10; //Only top 10 players
 const PORT = 8080;
 const WEBSOCKET_PORT = 8082;
+
 /**
  * Variables
  *
@@ -22,7 +23,6 @@ var users_conn = [];
 var users=[]; //array of Users registered
 var games=[]; //array of Game played
 var leaderboard = [];
-//var pins = [];
 var pins = {};
 
 var sessionCheckerTimer;
@@ -39,7 +39,6 @@ class LeaderboardItem{
     this.level = level;
   }
 }
-
 
 class User{
   constructor(email,name,pass,score,lvl){
@@ -78,6 +77,7 @@ class Game {
 //Add admin account
 users.push(new User('admin','admin','21232f297a57a5a743894a0e4a801fc3',0,1)) //heslo je tiez admin
 
+//Add all pins and set to false
 for(let i=0; i<10000; i++)
 {
   let pin = '';
@@ -103,21 +103,15 @@ for(let i=0; i<10000; i++)
 
 
 /**
- * Websocket
+ * Server handling
  */
 
 const wss = new WebSocket.Server({ port: WEBSOCKET_PORT })
 
 wss.on('connection', (ws,req) => {
   var game = null;
-
-  console.log(req.headers);
-  console.log(req.url);
-
-  //console.log(ws);
-  console.log("CONNECTED WITH COOKIE " + getSessionID(req.headers.cookie));
-
   var found = false;
+
   for(var j=0;j<users_conn.length;j++)
   {
     if(users_conn[j][1] === getSessionID(req.headers.cookie)){
@@ -147,8 +141,7 @@ wss.on('connection', (ws,req) => {
 
   for (var i = 0; i < sessions.length; i++) {
     if (sessions[i].sessionID === getSessionID(req.headers.cookie)) {
-      console.log("FOUND SESSION");
-      game = new Game(sessions[i], getAvailablePin(), null, new housenka_class());
+      game = new Game(sessions[i], getAvailablePin(), [], new housenka_class());
       games.push(game);
       break;
     }
@@ -181,23 +174,27 @@ wss.onclose = () => {
 };
 
 wss.on('checkSessions', ()=>{
-  //console.log('Checking sessions');
   checkSessions();
 })
 
 wss.on('sendArray', (data) => {
 
-  //console.log('COUNT OF GAMES '+games.length);
-
   for(var i=0;i<users_conn.length;i++)
   {
-    var game = getGame(users_conn[i][1]);
+    //var game = getGame(users_conn[i][1]);
+    var game_info = getGameWithSpectators(users_conn[i][1]);
+    var game = game_info[0];
+    var isOwner = game_info[1];
+    var scoreInfo = 'unknown unknown unknown unknown';
     if(game!=null && game.started) {
       /*if(game.session.user)
         console.log("Connected " + game.session.user.email);*/
-      var ended = game.housenka.pohybHousenky();
-      var scoreInfo = updateScore(game,ended);
-      users_conn[i][0].send('area '+scoreInfo+' '+JSON.stringify(game.housenka.getArray()));
+      if(isOwner) {
+        var ended = game.housenka.pohybHousenky();
+        scoreInfo = updateScore(game, ended, isOwner);
+      }
+
+        users_conn[i][0].send('area ' + scoreInfo + ' ' + JSON.stringify(game.housenka.getArray()));
     }
     else{
       //Zatial nic ?
@@ -274,8 +271,8 @@ app.get('/index', function(req, res) {
 
 app.get('/', function(req, res) {
 
-  req.session.cookie.expires = true
-  req.session.cookie.maxAge = 200000; //po 6 min vyprsi session ? TODO
+  //req.session.cookie.expires = true
+  //req.session.cookie.maxAge = 200000; //po 6 min vyprsi session ? TODO
 
 
   var is_added = false;
@@ -337,7 +334,6 @@ app.post('/login',((req, res) => {
         res.send(createAdminMenu());
       }
       else {
-        console.log(createLogout(req.session.name));
         res.send(createLogout(req.session.name));
       }
 
@@ -352,12 +348,7 @@ app.post('/login',((req, res) => {
 
 app.post('/up',(req,res)=> {
 
-  console.log("GOT UP "+req.body.code);
-
-  if(req.cookie) {
-    console.log(req.cookie.maxAge);
-    console.log(req.cookie);
-  }
+  //console.log("GOT UP "+req.body.code);
 
   var game = getGame(req.sessionID);
 
@@ -381,14 +372,12 @@ app.post('/down',(req,res)=> {
 })
 
 app.get('/getmenu',(req,res)=> {
-  console.log("SENGING TABLE");
   res.send(createTable());
   res.end();
 })
 
 app.post('/start',(req,res)=> {
   getGame(req.sessionID).started = true;
-  console.log('Starting game!!');
   res.end();
 })
 
@@ -486,7 +475,17 @@ app.get('/leaderboard', function(req,res) {
 })
 
 app.get('/activegames',function(req,res) {
-  res.send(createActiveGames());
+  res.send(createActiveGames(req.sessionID));
+})
+
+app.get('/showusers',function(req,res) {
+  //TODO check if user is admin
+  if(getSession(req.sessionID).user.name === 'admin'){
+    res.send(createAdminTable());
+  }
+  else {
+    res.end();
+  }
 })
 
 app.get('/saveusers', function(req,res){
@@ -543,6 +542,38 @@ app.post('/loadusers',function(req,res){
   res.end();
 })
 
+app.post('/connect',function(req,res){
+  var pin = req.body.pin;
+  var onlyWatching = req.body.watching;
+
+  var game = getGame(req.sessionID);
+
+  if(game.pin === pin)
+  {
+    res.end();
+    console.log("wrong pin !");
+    return;
+  }
+
+  games.splice(games.indexOf(game),1);
+
+  for(var i=0;i<games.length;i++)
+  {
+    if(games[i].pin === pin)
+    {
+      games[i].spectators.push(getSession(req.sessionID));
+      break;
+    }
+  }
+
+
+  /*if(!onlyWatching)
+    res.send(createControlBtns());
+  else
+    res.end();*/
+  res.end();
+
+})
 
 app.listen(PORT, () => {
   console.log(`Example app listening at http://localhost:${PORT}`)
@@ -567,7 +598,6 @@ function refreshStats(sessionID)
     }
   }
 }
-
 
 //Ziskanie sessionID z "connect.sid=s%3Ag57IbGaNr6yMz4FbOMasXu4PtRtxkT2A.1SEXmdvIBVuPgMH61F0w5bKs8JTsfk1%2BDnjFHIHwexk"
 function getSessionID(raw_text)
@@ -624,6 +654,24 @@ function getGame(sessionID)
   {
     if(games[i].session.sessionID === sessionID) {
       return games[i];
+    }
+  }
+
+  return null;
+}
+
+function getGameWithSpectators(sessionID)
+{
+  for(var i=0;i<games.length;i++)
+  {
+    var game = games[i];
+    if(game.session.sessionID === sessionID) {
+      return [game,true];
+    }
+    for(var j=0;j<game.spectators.length;j++){
+      if(game.spectators[i].sessionID === sessionID) {
+        return [game,false];
+      }
     }
   }
 
@@ -757,7 +805,7 @@ function loadUserData(data)
 }
 
 /**
- * HTML to JSON helper functions
+ * Create and convert HTML to JSON helper functions
  *
  */
 
@@ -772,7 +820,59 @@ function createObject(params)
   return obj;
 }
 
-function getGamesData()
+function createControlBtns()
+{
+}
+
+function getAdminTableData()
+{
+  const style = createObject([['fontSize', '35px']]);
+  var header = createObject([['tag','tr'],['innerTags',[
+    createObject([['tag','th'],['width','30%'],['style',style],['innerText','Name']]),
+    createObject([['tag','th'],['width','25%'],['style',style],['innerText','Session score']]),
+    createObject([['tag','th'],['width','25%'],['style',style],['innerText','Session lvl']]),
+    createObject([['tag','th'],['width','20%'],['style',style],['innerText','PIN']])
+  ]]]);
+
+  var obj = [header];
+
+  for(var i=0;i<games.length;i++) {
+
+    var item = games[i];
+    var name;
+
+    if(item.session.user){
+      name = item.session.user.name;
+    }
+    else {
+      name = NO_USER;
+    }
+
+    var tableItem = createObject([['tag','tr'],['innerTags',[
+      createObject([['tag','td'],['width','40%'],['align','center'],['style',style],['innerText',name]]),
+      createObject([['tag','td'],['width','20%'],['align','center'],['style',style],['innerText',item.session.score]]),
+      createObject([['tag','td'],['width','20%'],['align','center'],['style',style],['innerText',item.session.level]]),
+      createObject([['tag','td'],['width','20%'],['align','center'],['style',style],['innerText',item.pin]]),
+    ]]]);
+    obj.push(tableItem);
+  }
+
+  return obj;
+}
+
+function createAdminTable()
+{
+  var style = createObject([['width','1000px']]);
+
+  var leaderboard = createObject([['tag','div'],['id','adminTable'],['style',style],['innerTags',[
+    createObject([['tag','table'],['innerTags',
+      getAdminTableData()
+    ]])
+  ]]])
+  return leaderboard;
+}
+
+function getGamesData(sessionID)
 {
   const style = createObject([['fontSize', '35px']]);
   var header = createObject([['tag','tr'],['innerTags',[
@@ -786,11 +886,16 @@ function getGamesData()
   for(var i=0;i<games.length;i++)
   {
     var item = games[i];
+    var connectBtn;
+    if(item.session.sessionID === sessionID) {
+      connectBtn = createObject([['tag','div']]);
+    }
+    else {
+      connectBtn = createButton('Watch game','watchGame',item.pin);
+    }
 
     var username;
-    console.log(item);
-    console.log(item.session);
-    console.log(item.session.user);
+
     if(item.session.user)
       username = item.session.user.name;
     else
@@ -800,7 +905,7 @@ function getGamesData()
       createObject([['tag','td'],['width','30%'],['align','center'],['style',style],['innerText',i+1]]),
       createObject([['tag','td'],['width','40%'],['align','center'],['style',style],['innerText',username]]),
       createObject([['tag','td'],['width','30%'],['align','center'],['innerTags',[
-          createButton('connect','connectTable',item.pin)
+          connectBtn
       ]]])
     ]]]);
     obj.push(tableItem);
@@ -809,13 +914,13 @@ function getGamesData()
   return obj;
 }
 
-function createActiveGames() {
+function createActiveGames(sessionID) {
   var style = createObject([['width', '500px']]);
 
   var activeGames = createObject([['tag', 'div'], ['id', 'showActiveGames'], ['style', style], ['innerTags', [
     //createLabel('Active games', '40px'),
     createObject([['tag', 'table'], ['innerTags',
-      getGamesData()
+      getGamesData(sessionID)
     ]])
   ]]])
   return activeGames;
@@ -945,10 +1050,13 @@ function createTable()
 {
   const br = createObject([['tag', 'br']]);
 
+  const startBtnStyle = createObject([['width', '210px'], ['height', '50px'],['fontSize','23px'],['background-color','green']]);
+  var startButton = createObject([['tag', 'button'], ['id','statusBtn'] ,['innerHTML', 'Start new game'], ['style', startBtnStyle], ['onclick', 'changeGameStatus']]);
+
   const otherPart = createObject([['tag', 'div'], ['id','otherPart'], ['innerTags', [
     createObject([['tag', 'tr'], ['innerTags', [createLabel('PIN','25px')]]]),
     createObject([['tag', 'tr'], ['innerTags', [createInputField('pin')]]]),br,
-    createObject([['tag', 'tr'], ['innerTags', [createButton('Connect','todo','connectBtn')]]]), br,
+    createObject([['tag', 'tr'], ['innerTags', [createButton('Connect','connect','connectBtn')]]]), br,
     createObject([['tag', 'tr'], ['innerTags', [createButton('Show leaderboard','showLeaderboard','leaderboardBtn')]]]), br,
     createObject([['tag', 'tr'], ['innerTags', [createButton('Show all games','showActiveGames','showGamesBtn')]]]), br,
     createObject([['tag', 'tr'], ['innerTags', [createUploadField('loadGame')]]]), br,
@@ -970,7 +1078,7 @@ function createTable()
         createStatLabel('maxLvlLabel'), br,
         createStatLabel('scoreLabel'), br,
         createStatLabel('lvlLabel'), br,
-        createObject([['tag', 'tr'], ['innerTags', [createButton('Start new game','changeGameStatus','statusBtn')]]]), br,
+        createObject([['tag', 'tr'], ['innerTags', [startButton]]]), br,
         otherPart, br
       ]]]),
       createObject([['tag', 'td'], ['width', '15']]),
