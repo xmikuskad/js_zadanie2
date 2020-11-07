@@ -348,22 +348,31 @@ app.post('/login',((req, res) => {
 
 app.post('/up',(req,res)=> {
 
-  //console.log("GOT UP "+req.body.code);
+  var game;
+  if(req.body.owner === 'true') {
+    console.log('GOT OWNER');
+    game = getGame(req.sessionID);
+  }
+  else{
+    console.log('GOT SPECTATOR');
+    game = getGameWithSpectators(req.sessionID)[0];
+  }
 
-  var game = getGame(req.sessionID);
-
-  if(game!=null)
+  if(game!=null) {
+    console.log('FOUND GAME!!');
     game.housenka.stiskKlavesy(parseInt(req.body.code));
-  else
-  {
 
+    if(req.body.owner === 'false')
+      game.housenka.uvolneniKlavesy(parseInt(req.body.code))
   }
 
   res.end();
 })
 
 app.post('/down',(req,res)=> {
-  var game = getGame(req.sessionID);
+  var game;
+  if(req.body.owner === 'true')
+    game= getGame(req.sessionID);
 
   if(game!=null)
     game.housenka.uvolneniKlavesy(parseInt(req.body.code));
@@ -543,6 +552,7 @@ app.post('/loadusers',function(req,res){
 })
 
 app.post('/connect',function(req,res){
+
   var pin = req.body.pin;
   var onlyWatching = req.body.watching;
 
@@ -567,14 +577,18 @@ app.post('/connect',function(req,res){
     }
   }
 
-
-  /*if(!onlyWatching)
-    res.send(createControlBtns());
-  else
-    res.end();*/
-  console.log(createDisconnect(pin));
-  res.send(createDisconnect(pin))
-  res.end();
+  console.log('onlyWatching = '+onlyWatching);
+  console.log(typeof(onlyWatching));
+  if(onlyWatching === 'true') {
+    console.log('ONLY DISCONNECT');
+    res.send(createDisconnect(pin))
+  }
+  else {
+    console.log('ADDED CONTROL');
+    //console.log(createControlBtns(pin))
+    res.send(createControlBtns(pin));
+  }
+  //res.end();
 
 })
 
@@ -861,8 +875,24 @@ function createDisconnect(pin) {
   return obj;
 }
 
-function createControlBtns()
+function createControlBtns(pin)
 {
+  var obj = createObject([['tag', 'div'], ['innerTags', [
+    createObject([['tag', 'tr'], ['innerTags', [
+      createButton('UP','spectatorMove','38')
+    ]]]),
+    createObject([['tag', 'tr'], ['innerTags', [
+      createButton('LEFT','spectatorMove','37'),
+      createButton('RIGHT','spectatorMove','39')
+    ]]]),
+    createObject([['tag', 'tr'], ['innerTags', [
+      createButton('DOWN','spectatorMove','40')
+    ]]]),
+    createObject([['tag', 'br']]),
+      createDisconnect(pin)
+  ]]])
+
+  return obj;
 }
 
 function getAdminTableData()

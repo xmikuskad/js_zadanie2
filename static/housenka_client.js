@@ -295,6 +295,7 @@ function connect(pinInc)
         pin = pinInc;
     }
     console.log("CONNECTING TO "+pin);
+    console.log('WATCHING '+watching);
 
     $.post('http://localhost:8080/connect', {
         pin: pin,
@@ -335,6 +336,14 @@ function disconnect()
         place.appendChild(parseObject(data));
     });
 
+}
+
+function spectatorMove(event)
+{
+    $.post('http://localhost:8080/up',{
+        code: event.target.id,
+        owner: false
+    }, function (data) {});
 }
 
 function todo(a){
@@ -566,7 +575,8 @@ function send_keypress(e)
     var udalost = e || window.event;
 
     $.post('http://localhost:8080/down',{
-        code: udalost.keyCode
+        code: udalost.keyCode,
+        owner: true
     }, function (data) {});
 }
 
@@ -575,7 +585,8 @@ function send_keylift(e)
     var udalost = e || window.event;
 
     $.post('http://localhost:8080/up',{
-        code: udalost.keyCode
+        code: udalost.keyCode,
+        owner: true
     }, function (data) {});
 }
 
