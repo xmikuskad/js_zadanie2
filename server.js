@@ -188,7 +188,6 @@ wss.on('checkSessions', ()=>{
 wss.on('sendArray', (data) => {
 
   //console.log('COUNT OF GAMES '+games.length);
-  //checkSessions();
 
   for(var i=0;i<users_conn.length;i++)
   {
@@ -201,10 +200,7 @@ wss.on('sendArray', (data) => {
       users_conn[i][0].send('area '+scoreInfo+' '+JSON.stringify(game.housenka.getArray()));
     }
     else{
-      /*if(game)
-        console.log('GAME STATUS '+game.started);
-      else
-        console.log('GAME NOT FOUND!');*/
+      //Zatial nic ?
     }
   }
 
@@ -367,6 +363,10 @@ app.post('/up',(req,res)=> {
 
   if(game!=null)
     game.housenka.stiskKlavesy(parseInt(req.body.code));
+  else
+  {
+
+  }
 
   res.end();
 })
@@ -706,17 +706,15 @@ function updateScore(game,ended) {
 function updateLeaderboard(item)
 {
   console.log("Got item, leaderboard count "+leaderboard.length);
-  if(leaderboard.length < 1 )
+  if(leaderboard.length < MAX_LEADERBOARD_COUNT )
   {
-    console.log('IS FIRST ITEM');
     leaderboard.push(item);
+    leaderboard.sort((a,b) => (a.score > b.score) ? 1:-1);
     return;
   }
-  console.log("NOT FIRST");
+
   if(leaderboard[leaderboard.length-1].score < item.score)
   {
-    console.log("ADDING");
-
     leaderboard.push(item);
     leaderboard.sort((a,b) => (a.score > b.score) ? 1:-1);
 
@@ -774,12 +772,13 @@ function createObject(params)
   return obj;
 }
 
-function getGamesPins()
+function getGamesData()
 {
   const style = createObject([['fontSize', '35px']]);
   var header = createObject([['tag','tr'],['innerTags',[
-    createObject([['tag','th'],['width','50%'],['style',style],['innerText','Game number']]),
-    createObject([['tag','th'],['width','50%'],['style',style],['innerText','PIN']])
+    createObject([['tag','th'],['width','30%'],['style',style],['innerText','Game number']]),
+    createObject([['tag','th'],['width','40%'],['style',style],['innerText','User']]),
+    createObject([['tag','th'],['width','30%'],['style',style]])
   ]]]);
 
   var obj = [header];
@@ -787,9 +786,22 @@ function getGamesPins()
   for(var i=0;i<games.length;i++)
   {
     var item = games[i];
+
+    var username;
+    console.log(item);
+    console.log(item.session);
+    console.log(item.session.user);
+    if(item.session.user)
+      username = item.session.user.name;
+    else
+      username = NO_USER;
+    //games[i].pin
     var tableItem = createObject([['tag','tr'],['innerTags',[
-      createObject([['tag','td'],['width','50%'],['align','center'],['style',style],['innerText',i+1]]),
-      createObject([['tag','td'],['width','50%'],['align','center'],['style',style],['innerText',games[i].pin]]),
+      createObject([['tag','td'],['width','30%'],['align','center'],['style',style],['innerText',i+1]]),
+      createObject([['tag','td'],['width','40%'],['align','center'],['style',style],['innerText',username]]),
+      createObject([['tag','td'],['width','30%'],['align','center'],['innerTags',[
+          createButton('connect','connectTable',item.pin)
+      ]]])
     ]]]);
     obj.push(tableItem);
   }
@@ -801,9 +813,9 @@ function createActiveGames() {
   var style = createObject([['width', '500px']]);
 
   var activeGames = createObject([['tag', 'div'], ['id', 'showActiveGames'], ['style', style], ['innerTags', [
-    createLabel('Active games', '40px'),
+    //createLabel('Active games', '40px'),
     createObject([['tag', 'table'], ['innerTags',
-      getGamesPins()
+      getGamesData()
     ]])
   ]]])
   return activeGames;
@@ -873,10 +885,10 @@ function getLeaderboardData()
 {
   const style = createObject([['fontSize', '35px']]);
   var header = createObject([['tag','tr'],['innerTags',[
-    createObject([['tag','th'],['width','10%'],['style',style],['innerText','Poradie']]),
-    createObject([['tag','th'],['width','30%'],['style',style],['innerText','Meno']]),
+    createObject([['tag','th'],['width','10%'],['style',style],['innerText','Rank']]),
+    createObject([['tag','th'],['width','30%'],['style',style],['innerText','User']]),
     createObject([['tag','th'],['width','30%'],['style',style],['innerText','Level']]),
-    createObject([['tag','th'],['width','30%'],['style',style],['innerText','Skore']]),
+    createObject([['tag','th'],['width','30%'],['style',style],['innerText','Score']]),
   ]]]);
 
   var obj = [header];

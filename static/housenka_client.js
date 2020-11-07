@@ -199,8 +199,18 @@ function changeUserPart(newObj)
     userDiv.appendChild(parseObject(newObj));
 }
 
-function todo(){
-    console.log('TODO');
+function connectTable(event)
+{
+    connect(event.target.id);
+}
+
+function connect(pin)
+{
+    console.log("CONNECTING TO "+pin);
+}
+
+function todo(a){
+    console.log('ID is '+a.target.id);
 }
 
 /**
