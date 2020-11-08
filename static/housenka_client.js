@@ -13,21 +13,27 @@ var ready = false;
 
 connection.onopen = () => {
     console.log("OnOPEN");
-    connection.send("GETIMG")
+    getMenu();
 }
 connection.onerror = error => {
     console.log(`WebSocket error: ${error}`)
 }
 connection.onmessage = e => {
+    console.log(e.data);
     var comm = e.data.split(" ");
 
     if(comm[0] === 'img') {
-        imagesName = JSON.parse(comm[1]);
-        getMenu();
+        imagesName = JSON.parse(comm[2]);
+        loadLabels();
+        housenkaInit();
+        connection.send("READY "+comm[1]);
     }
     else if(ready && comm[0] === 'area') {
+        console.log('got AREA');
         show_new_area(JSON.parse(comm[5]));
         refreshLabels(comm);
+    } else if(comm[0]==='CONNECTED') {
+        connection.send("GETIMG "+comm[1])
     }
 }
 
@@ -43,14 +49,15 @@ document.body.appendChild(a);*/
 
 function getMenu()
 {
+    var id;
     $.get('http://localhost:8080/getmenu',{}, function (data) {
         console.log(data);
+        var obj = data[0];
+        console.log('ID is '+data[1]);
         var div = document.getElementById('menu');
         if(div.childElementCount <=0)
-            div.appendChild(parseObject(data));
-
-        loadLabels();
-        housenkaInit();
+            div.appendChild(parseObject(obj));
+        connection.send('CONNECT '+data[1]);
     });
 }
 
@@ -225,10 +232,12 @@ function showLeaderboard() {
     else
     {
         $.get('http://localhost:8080/leaderboard', {}, function (data) {
-            var obj = parseObject(data);
-            console.log(data);
-            document.body.appendChild(obj);
-            btn.innerText='Hide leaderboard';
+            if(data!=='ERROR') {
+                var obj = parseObject(data);
+                console.log(data);
+                document.body.appendChild(obj);
+                btn.innerText = 'Hide leaderboard';
+            }
         });
 
     }
@@ -244,10 +253,12 @@ function showActiveGames() {
     else
     {
         $.get('http://localhost:8080/activegames', {}, function (data) {
-            var obj = parseObject(data);
-            console.log(data);
-            document.body.appendChild(obj);
-            btn.innerText='Hide all games';
+            if(data!=='ERROR') {
+                var obj = parseObject(data);
+                console.log(data);
+                document.body.appendChild(obj);
+                btn.innerText = 'Hide all games';
+            }
         });
 
     }
@@ -264,10 +275,12 @@ function showUsers(){
     }
     else {
         $.get('http://localhost:8080/showusers', {}, function (data) {
-            var obj = parseObject(data);
-            console.log(data);
-            document.body.appendChild(obj);
-            btn.innerText='Hide users';
+            if(data !== 'ERROR') {
+                var obj = parseObject(data);
+                console.log(data);
+                document.body.appendChild(obj);
+                btn.innerText = 'Hide users';
+            }
         });
     }
 }
@@ -552,22 +565,14 @@ function startHry () {
     document['onkeydown'] = send_keypress;
     document['onkeyup'] = send_keylift;
     ready = true;
-    connection.send("READY");
 }
-var lastArea = null;
+
 function show_new_area(area)
 {
     var same = true;
     for(var i=0;i<area.length;i++) {
         nastavBarvu(i, area[i]);
-        if(lastArea)
-        {
-            if(lastArea[i] !== area[i])
-                same = false;
-        }
     }
-    lastArea = area;
-    console.log("SAME ARERA? "+same);
 }
 
 function send_keypress(e)
@@ -589,6 +594,3 @@ function send_keylift(e)
         owner: true
     }, function (data) {});
 }
-
-
-console.log(md5('admin'));

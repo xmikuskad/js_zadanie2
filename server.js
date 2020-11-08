@@ -16,8 +16,6 @@ const WEBSOCKET_PORT = 8082;
  * Variables
  *
  */
-const app = express()
-
 var sessions = []; //Array of active sessions
 var users_conn = [];
 var users=[]; //array of Users registered
@@ -51,7 +49,7 @@ class User{
 }
 
 class MySession{
-  constructor(user,score,lvl,sessionID) {
+  constructor(user,score,lvl,sessionID,id) {
     this.user = user;
     this.score = score;
     this.level = lvl;
@@ -109,62 +107,29 @@ for(let i=0; i<10000; i++)
 const wss = new WebSocket.Server({ port: WEBSOCKET_PORT })
 
 wss.on('connection', (ws,req) => {
-  let i;
-  let game = null;
-
-  //Check if user is not already connected
-  for(let j=0; j<users_conn.length; j++)
-  {
-    //If user is connected, delete previous game and session
-    if(users_conn[j][1] === getSessionID(req.headers.cookie)){
-
-      for(i = 0; i<games.length; i++) {
-        if (games[i].session.sessionID === users_conn[j][1]) {
-          pins[games[i].pin] = false;
-          games.splice(i,1);
-        }
-      }
-      users_conn.splice(j,1);
-
-
-      break;
-    }
-  }
-
-  //Check for sessions which ended and clear them. Reset timer for that
-  clearInterval(sessionCheckerTimer);
-  sessionCheckerTimer = null;
-  sessionCheckerTimer =   setInterval(function(){
-    wss.emit('checkSessions');
-  }, 2000);
-
-  //Add connection to client list
-  users_conn.push([ws, getSessionID(req.headers.cookie)]);
-
-  //Create game for that session
-  for (i = 0; i < sessions.length; i++) {
-    if (sessions[i].sessionID === getSessionID(req.headers.cookie)) {
-      game = new Game(sessions[i], getAvailablePin(), [], new housenka_class());
-      games.push(game);
-      break;
-    }
-  }
-
 
   ws.on('message', message => {
-    const game = getGame(getSessionID(req.headers.cookie));
+    let msg = message.split(' ');
+    //Pair ws with express
+    if (msg[0] === 'CONNECT') {
+      let id = connectWsWithExpress(ws, req, msg[1]);
+      ws.send('CONNECTED ' + id);
+    } else {
+      if (msg.length > 1) {
 
-    if (game && !game.started) {
-      //Sending links for housenka images
-      if (message === 'GETIMG') {
-        ws.send('img ' + JSON.stringify(game.housenka.getImagesArr()));
-        game.housenka.novaHra();
-      }
-
-      //Client loaded all images, start game
-      if (message === 'READY') {
-        var info = updateScore(game, false)
-        ws.send('area ' + info + ' ' + JSON.stringify(game.housenka.getArray()));
+        const game = getGame(msg[1]);
+        if (game && !game.started) {
+          //Sending links for housenka images
+          if (msg[0] === 'GETIMG') {
+            ws.send('img ' + msg[1] + ' ' + JSON.stringify(game.housenka.getImagesArr()));
+            game.housenka.novaHra();
+          } else
+              //Client loaded all images, start game
+          if (msg[0] === 'READY') {
+            const info = updateScore(game, false);
+            ws.send('area ' + info + ' ' + JSON.stringify(game.housenka.getArray()));
+          }
+        }
       }
     }
 
@@ -179,14 +144,13 @@ wss.on('checkSessions', ()=>{
 
 //Send plocha to all users for update
 wss.on('sendArray', (data) => {
+
   for (let i = 0; i < users_conn.length; i++) {
     const game_info = getGameWithSpectators(users_conn[i][1]);
     let scoreInfo = 'unknown unknown unknown unknown';
-
     if (game_info != null) {
       const game = game_info[0];
-      const isOwner = game_info[1]; //If user is spectating or he is the master of game
-
+      const isOwner = game_info[1]; //Check if user is spectating or he is the master of game
       if (game.started) {
         //Update score only for master of game
         if (isOwner) {
@@ -194,12 +158,55 @@ wss.on('sendArray', (data) => {
           scoreInfo = updateScore(game, ended, isOwner);
         }
       }
-
       users_conn[i][0].send('area ' + scoreInfo + ' ' + JSON.stringify(game.housenka.getArray()));
     }
   }
 
 })
+
+function connectWsWithExpress(ws,req,sessionID)
+{
+  let i;
+  let game = null;
+
+  //Check if user is not already connected
+  for(let j=0; j<users_conn.length; j++)
+  {
+    //If user is connected, delete previous game and session
+    if(users_conn[j][1] === sessionID){
+
+      for(i = 0; i<games.length; i++) {
+        if (games[i].session.sessionID === users_conn[j][1]) {
+          pins[games[i].pin] = false;
+          games.splice(i,1);
+        }
+      }
+      users_conn.splice(j,1);
+      break;
+    }
+  }
+
+  //Check for sessions which ended and clear them. Reset timer for that
+  clearInterval(sessionCheckerTimer);
+  sessionCheckerTimer = null;
+  sessionCheckerTimer =   setInterval(function(){
+    wss.emit('checkSessions');
+  }, 2000);
+
+  //Add connection to client list
+  users_conn.push([ws, sessionID]);
+
+  //Create game for that session
+  for (i = 0; i < sessions.length; i++) {
+    if (sessions[i].sessionID === sessionID) {
+      game = new Game(sessions[i], getAvailablePin(), [], new housenka_class());
+      games.push(game);
+      break;
+    }
+  }
+
+  return sessionID;
+}
 
 //Check if sessions are valid and delete the invalid ones
 function checkSessions()
@@ -250,35 +257,22 @@ sessionCheckerTimer = setInterval(function(){
  * Express sessions
  *
  */
-
+const app = express();
 app.use("/static", express.static('./static/'));
+
+app.use(session({
+  secret: 'housenka',
+  resave: false,
+  saveUninitialized: true,
+}));
+
 //Added to read reqeust http data - using it for getting sessionID
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({extended: true}));
 app.set('views', __dirname + '/views');
 
-app.use(session({
-  secret: 'housenka',
-  resave: true,
-  saveUninitialized: true
-}));
-
 
 app.get('/', function(req, res) {
-  //Check if session already exists
-  let is_added = false;
-  for(let i=0; i<sessions.length; i++)
-  {
-    if(sessions[i].sessionID === req.sessionID) {
-      is_added = true;
-      break;
-    }
-  }
-  if(!is_added)
-  {
-    sessions.push(new MySession(null,0,1,req.sessionID));
-  }
-
   //Send basic html
   res.sendFile('index.html', { root: app.get('views') })
 });
@@ -371,8 +365,23 @@ app.post('/down',(req,res)=> {
 })
 
 app.get('/getmenu',(req,res)=> {
+
+  //Check if session already exists
+  let is_added = false;
+  for(let i=0; i<sessions.length; i++)
+  {
+    if(sessions[i].sessionID === req.sessionID) {
+      is_added = true;
+      break;
+    }
+  }
+  if(!is_added)
+  {
+    sessions.push(new MySession(null,0,1,req.sessionID));
+  }
+
   //Send html elements
-  res.send(createTable());
+  res.send(createTable(req.sessionID));
 })
 
 app.post('/start',(req,res)=> {
@@ -477,10 +486,11 @@ app.get('/showusers',function(req,res) {
     //Check if user is really logged in as admin
     if (session.user.name === 'admin') {
       res.send(createAdminTable());
-    } else {
-      res.end();
+      return;
     }
   }
+
+  res.send('ERROR');
 })
 
 app.get('/saveusers', function(req,res){
@@ -547,18 +557,29 @@ app.post('/connect',function(req,res){
   var pin = req.body.pin;
   var onlyWatching = req.body.watching; //Is false if player can control the game
 
-  var game = getGame(req.sessionID);
+  var game = getGameWithSpectators(req.sessionID);
   //Check if game exists and pin is right.
   //You cant watch your own game!
-  if(!game || game.pin === pin || !pins[pin])
+  //You cant watch game if someone is watching you already
+  if(!game || game[0].pin === pin || !pins[pin])
   {
-    res.end();
+    console.log("Connection denied");
+    res.send('ERROR');
     return;
   }
 
-  //Delte actual game
-  pins[game.pin] = false;
-  games.splice(games.indexOf(game),1);
+  if(game[1] === true) {
+    console.log("DELETING");
+    //Delete actual game
+    pins[game[0].pin] = false;
+    games.splice(games.indexOf(game[0]), 1);
+  }
+  else
+  {
+    console.log("NOT DELETING");
+    //Disconnect from other game
+    game[0].spectators.splice(game[0].spectators.indexOf(getSession(req.headers)),1)
+  }
 
   //Add user as spectator
   for(let i=0; i<games.length; i++)
@@ -581,6 +602,7 @@ app.post('/connect',function(req,res){
 
 app.get('/disconnect',function(req,res) {
 
+  let found = false;
   //Find game which user spectates, delete spectator and create new game
   for(let i=0; i<games.length; i++)
   {
@@ -590,15 +612,19 @@ app.get('/disconnect',function(req,res) {
       if(array[j].sessionID === req.sessionID)
       {
         array.splice(j,1);
-        const game = new Game(getSession(req.sessionID), getAvailablePin(), [], new housenka_class());
-        game.housenka.novaHra();
-        games.push(game);
-
-        res.send(getConnectPart());
-        return;
+        found = true;
+        break;
       }
     }
+    if(found)
+      break;
   }
+
+  const game = new Game(getSession(req.sessionID), getAvailablePin(), [], new housenka_class());
+  game.housenka.novaHra();
+  games.push(game);
+
+  res.send(getConnectPart());
 
 })
 
@@ -610,6 +636,11 @@ app.listen(PORT, () => {
 /**
  * Helper functions
  */
+
+function createRandomID()
+{
+  return (new Date()).getTime().toString(36) + Math.random().toString(36).slice(2);
+}
 
 //Method used for refreshing score labels and plocha for client
 function refreshStats(sessionID)
@@ -697,12 +728,15 @@ function getGameWithSpectators(sessionID)
   for(let i=0; i<games.length; i++)
   {
     const game = games[i];
-    if(game.session.sessionID === sessionID) {
-      return [game,true];
-    }
-    for(let j=0; j<game.spectators.length; j++){
-      if(game.spectators[i].sessionID === sessionID) {
-        return [game,false];
+    if(game.session) {
+      if (game.session.sessionID === sessionID) {
+        return [game, true];
+      }
+
+      for (let j = 0; j < game.spectators.length; j++) {
+        if (game.spectators[j].sessionID === sessionID) {
+          return [game, false];
+        }
       }
     }
   }
@@ -902,7 +936,7 @@ function getAdminTableData()
     let name;
 
     //Check for user name
-    if(item.session.user){
+    if(item.session && item.session.user){
       name = item.session.user.name;
     }
     else {
@@ -1136,7 +1170,7 @@ function getConnectPart()
 }
 
 //Combine and create the whole starting UI
-function createTable() {
+function createTable(id) {
   const br = createObject([['tag', 'br']]);
   const labelStyle = createObject([['fontSize', '35px']]);
   const startBtnStyle = createObject([['width', '210px'], ['height', '50px'], ['fontSize', '23px'], ['background-color', 'green']]);
@@ -1182,5 +1216,7 @@ function createTable() {
       gamePart
   ]]])
 
-  return menu;
+  console.log('ID '+id);
+  return [menu,id]
+
 }
