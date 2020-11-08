@@ -339,8 +339,6 @@ function disconnect()
         startBtn.style.display = null;
         startBtn.innerText = 'Start new game'
 
-        console.log(connection.readyState);
-
         while(place.firstChild)
         {
             place.removeChild(place.lastChild);
@@ -444,12 +442,37 @@ function refreshLabels(comm)
     maxLvl = comm[3];
     lvl = comm[4];
 
-    if(maxScore !== 'unknown') {
+    if(maxScore < 0)
+        return;
 
+    if(maxScore !== 'unknown') {
         maxScoreLabel.innerHTML = 'Max score is ' + maxScore;
+    }
+    else
+    {
+        maxScoreLabel.innerHTML = '';
+    }
+
+    if(maxLvl !== 'unknown') {
         maxLvlLabel.innerHTML = 'Max lvl is ' + maxLvl;
+    }
+    else
+        maxLvlLabel.innerHTML ='';
+
+    if(score !== 'unknown') {
         scoreLabel.innerHTML = 'Act score is ' + score;
+    }
+    else
+    {
+        scoreLabel.innerHTML = '';
+    }
+
+    if(lvl !== 'unknown') {
         lvlLabel.innerHTML = 'Act lvl is ' + lvl;
+    }
+    else
+    {
+        lvlLabel.innerHTML = '';
     }
 }
 

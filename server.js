@@ -147,7 +147,7 @@ wss.on('sendArray', (data) => {
 
   for (let i = 0; i < users_conn.length; i++) {
     const game_info = getGameWithSpectators(users_conn[i][1]);
-    let scoreInfo = 'unknown unknown unknown unknown';
+    let scoreInfo = '-1 -1 -1 -1';
     if (game_info != null) {
       const game = game_info[0];
       const isOwner = game_info[1]; //Check if user is spectating or he is the master of game
@@ -157,7 +157,13 @@ wss.on('sendArray', (data) => {
           const ended = game.housenka.pohybHousenky();
           scoreInfo = updateScore(game, ended, isOwner);
         }
+        else
+        {
+          //Update only act score to see actual score of spectated game
+          scoreInfo = 'unknown' + " " + game.housenka.body + " " + 'unknown' + " " + game.housenka.level;
+        }
       }
+      //Dont update score labels because the game didnt started
       users_conn[i][0].send('area ' + scoreInfo + ' ' + JSON.stringify(game.housenka.getArray()));
     }
   }
@@ -625,6 +631,7 @@ app.get('/disconnect',function(req,res) {
   games.push(game);
 
   res.send(getConnectPart());
+  refreshStats();
 
 })
 
@@ -645,6 +652,7 @@ function createRandomID()
 //Method used for refreshing score labels and plocha for client
 function refreshStats(sessionID)
 {
+  console.log('REFRESHING STATS!');
   for(let i=0; i<users_conn.length; i++)
   {
     if(users_conn[i][1] === sessionID) {
