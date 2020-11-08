@@ -40,8 +40,8 @@ connection.onmessage = e => {
     //Used for getting images
     else if (comm[0] === IMAGE_COMMAND) {
         console.log("HELLO??");
-        imagesName = JSON.parse(comm[2]);
-        loadLabels();
+        imagesName = JSON.parse(comm[3]);
+        loadLabels(comm[2]);
         housenkaInit();
         connection.send("READY " + comm[1]);
     }
@@ -506,8 +506,15 @@ function clearError(time)
 }
 
 //Initialize labels variables
-function loadLabels()
+function loadLabels(pin)
 {
+    if(pin)
+    {
+        const pinLabel = document.getElementById('pinText');
+        if(pinLabel)
+            pinLabel.innerText = 'Your pin is '+pin;
+    }
+
     maxScoreLabel = document.getElementById('maxScoreLabel');
     if(maxScoreLabel)
         maxScoreLabel.innerHTML = 'Max score is '+maxScore;

@@ -5,6 +5,8 @@
  * by Dominik Mikuska
  */
 
+//NOTE: admin account has name 'admin' and password 'admin'
+
 const express = require('express')
 const session = require('express-session');
 const bodyParser = require('body-parser');
@@ -129,7 +131,7 @@ wss.on('connection', (ws,req) => {
         if (game && !game.started) {
           //Sending links for housenka images
           if (msg[0] === 'GETIMG') {
-            ws.send('img ' + msg[1] + ' ' + JSON.stringify(game.housenka.getImagesArr()));
+            ws.send('img ' + msg[1] + ' ' + game.pin+' '+JSON.stringify(game.housenka.getImagesArr()));
             game.housenka.novaHra();
           } else
               //Client loaded all images, start game
@@ -640,7 +642,7 @@ app.get('/disconnect',function(req,res) {
   game.housenka.novaHra();
   games.push(game);
 
-  res.send(getConnectPart());
+  res.send(getConnectPart(game.pin));
   refreshStats();
 
 })
@@ -1173,14 +1175,21 @@ function createUserPart()
 }
 
 //Create connect part of UI
-function getConnectPart()
+function getConnectPart(pin)
 {
   const br = createObject([['tag', 'br']]);
+  const labelStyle = createObject([['fontSize', '25px']]);
+
+  let pinText = '';
+  if(pin)
+    pinText = 'Your pin is '+pin;
 
   const connectPart = createObject([['tag','div'],['innerTags',[
     createObject([['tag', 'tr'], ['innerTags', [createLabel('PIN','25px')]]]),
     createObject([['tag', 'tr'], ['innerTags', [createInputField('pin')]]]),br,
-    createObject([['tag', 'tr'], ['innerTags', [createButton('Connect','connect','connectBtn')]]]),br,br,
+    createObject([['tag', 'tr'], ['innerTags', [createButton('Connect','connect','connectBtn')]]]),br,
+    createObject([['tag', 'tr'], ['innerTags', [createObject([['tag','span'],['id','pinText'],['innerText',pinText],
+      ['display','inline-block'],['style',labelStyle]])]]]),br,br,
     createObject([['tag', 'tr'], ['innerTags', [createUploadField('loadGame')]]]),
     createObject([['tag', 'tr'], ['innerTags', [createButton('Load game', 'loadGame', 'loadBtn')]]]),br,
     createObject([['tag', 'tr'], ['innerTags', [createButton('Save game', 'saveGame', 'saveBtn')]]])
