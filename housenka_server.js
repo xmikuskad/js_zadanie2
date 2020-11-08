@@ -1,6 +1,8 @@
 // Housenka (Nibbles Revival)
 // implementoval na Vanoce 2007 Milan Sorm
 // this functions are from Milan Sorm https://is.stuba.sk/js/herna/housenka.js
+
+//Tento js subor upravil na class Dominik Mikuska
 class Housenka {
 
     constructor() {
@@ -159,8 +161,6 @@ class Housenka {
 
     nastavBarvu(pozice, barva) {
         this.plocha[pozice] = barva;
-
-        //TODO odosli na klienta?
     }
 
 
@@ -307,66 +307,6 @@ class Housenka {
 
         return [x, y];
     }
-
-    /*
-    callFinish () {
-        ajax_do_call('finish',finish_result,callFinish.arguments);
-    }
-
-    ajax_init_object () {
-        var ajax;
-
-        try {
-            ajax = new ActiveXObject("Msxml2.XMLHTTP");
-        } catch (e) {
-            try {
-                ajax = new ActiveXObject("Microsoft.XMLHTTP");
-            } catch (oc) {
-                ajax = null;
-            }
-        }
-
-        if (!ajax && typeof XMLHttpRequest != "undefined") {
-            ajax = new XMLHttpRequest();
-        }
-
-        return ajax;
-    }
-
-    ajax_do_call (func_name, callback, args) {
-        var post_data, i;
-
-        ++housenkaIterator;
-        post_data = "ajax_fce=" + escape(func_name) + ";ajax_iterator=" + housenkaIterator;
-        for (i=0; i<args.length; i++) {
-            var s = String(args[i]);
-            s = s.replace(/\+/g,"%2B");
-            post_data += ";ajax_arg=" + encodeURIComponent(s);
-        }
-
-        var x = ajax_init_object();
-        x.open("POST", housenkaURI, true);
-        x.setRequestHeader("Method","POST "+housenkaURI+" HTTP/1.1");
-        x.setRequestHeader("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
-    //	x.setRequestHeader("Connection","close");
-        x.onreadystatechange = () {
-            if (x.readyState != 4) return;
-            if (x.status == 200) {
-                var response = eval("(" + x.responseText + ")");
-                if (response.iterator == housenkaIterator) {
-                    if (!response.error) callback(response.data);
-                    else {
-                        window.alert("Error:\n"+response.errorinfo)
-                        show_result(ajaxErrorMsg);
-                    }
-                }
-            }
-            return;
-        }
-        x.send(post_data);
-        delete x;
-    }
-    */
 
     zed_poly(useky) {
         var last_x = useky[0];

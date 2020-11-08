@@ -1,4 +1,10 @@
 #!/usr/bin/env node
+
+/**
+ * index.html + server.js
+ * by Dominik Mikuska
+ */
+
 const express = require('express')
 const session = require('express-session');
 const bodyParser = require('body-parser');
@@ -6,8 +12,10 @@ const housenka_class = require('./housenka_server.js')
 const WebSocket = require('ws')
 const fs = require('fs');
 
+//No Copyright Music - Amadeus Legendary - https://archive.org/details/soundcloud-817541653 - stored on my google drive
 const SONG_LINK = 'https://docs.google.com/uc?export=open&id=14t2BJcqWToek8niPG4rxZSODfh4ocmuC';
 const NO_USER = "[N/A]";
+const ERROR = 'ERROR';
 const MAX_LEADERBOARD_COUNT = 10; //Only top 10 players
 const PORT = 8080;
 const WEBSOCKET_PORT = 8082;
@@ -23,7 +31,7 @@ var games=[]; //array of Game played
 var leaderboard = [];
 var pins = {};
 
-var sessionCheckerTimer;
+var sessionCheckerTimer; //Timer which periodically checks for expired sessions
 
 /**
  * Classes
@@ -270,6 +278,10 @@ app.use(session({
   secret: 'housenka',
   resave: false,
   saveUninitialized: true,
+  cookie: {
+    secure:false,
+    maxAge: 60*60*24*1000
+  }
 }));
 
 //Added to read reqeust http data - using it for getting sessionID
@@ -289,7 +301,7 @@ app.post('/register',(req,res)=> {
   {
     if(users[i].email === req.body.email || users[i].name === req.body.name)
     {
-      res.send("USED");
+      res.send(ERROR);
       return;
     }
   }
@@ -298,7 +310,7 @@ app.post('/register',(req,res)=> {
   const user = new User(req.body.email, req.body.name, req.body.password, 0, 1);
   users.push(user);
 
-  res.end();
+  res.send('OK');
 })
 
 app.post('/login',((req, res) => {
@@ -333,7 +345,7 @@ app.post('/login',((req, res) => {
     }
   }
 
-  res.send('WRONG');
+  res.send(ERROR);
 }))
 
 app.post('/up',(req,res)=> {
@@ -393,8 +405,10 @@ app.get('/getmenu',(req,res)=> {
 app.post('/start',(req,res)=> {
   //Unpause game updates
   let game = getGame(req.sessionID);
-  if(game)
+  if (game) {
     game.started = true;
+  }
+
   res.end();
 })
 
@@ -455,9 +469,7 @@ app.post('/upload',function(req,res) {
   }
 
   let game = getGame(req.sessionID);
-  //Pause game if game before was paused
   if (game) {
-    h.moving = game.housenka.moving;
     game.housenka = h;
   }
 
@@ -496,7 +508,7 @@ app.get('/showusers',function(req,res) {
     }
   }
 
-  res.send('ERROR');
+  res.send(ERROR);
 })
 
 app.get('/saveusers', function(req,res){
@@ -537,7 +549,7 @@ app.get('/saveusers', function(req,res){
           } catch (err) {
             console.error(err)
           }
-        }, 120000)
+        }, 60000)
       });
     }
   }
@@ -570,19 +582,17 @@ app.post('/connect',function(req,res){
   if(!game || game[0].pin === pin || !pins[pin])
   {
     console.log("Connection denied");
-    res.send('ERROR');
+    res.send(ERROR);
     return;
   }
 
   if(game[1] === true) {
-    console.log("DELETING");
     //Delete actual game
     pins[game[0].pin] = false;
     games.splice(games.indexOf(game[0]), 1);
   }
   else
   {
-    console.log("NOT DELETING");
     //Disconnect from other game
     game[0].spectators.splice(game[0].spectators.indexOf(getSession(req.headers)),1)
   }
@@ -652,7 +662,6 @@ function createRandomID()
 //Method used for refreshing score labels and plocha for client
 function refreshStats(sessionID)
 {
-  console.log('REFRESHING STATS!');
   for(let i=0; i<users_conn.length; i++)
   {
     if(users_conn[i][1] === sessionID) {
@@ -1151,7 +1160,7 @@ function createUserPart()
     createObject([['tag', 'tr'], ['innerTags', [createInputField('emailLogin')]]]), br,
     createObject([['tag', 'tr'], ['innerTags', [createLabel('Password','25px')]]]),
     createObject([['tag', 'tr'], ['innerTags', [createPasswordField('passwordLogin')]]]), br,
-    createObject([['tag', 'tr'], ['innerTags', [createButton('Log in','logIn','passwordBtn')]]]), br,
+    createObject([['tag', 'tr'], ['innerTags', [createButton('Log in','logIn','passwordBtn')]]]), br,br,
     createObject([['tag', 'tr'], ['innerTags', [createLabel('Email','25px')]]]),
     createObject([['tag', 'tr'], ['innerTags', [createInputField('emailRegistration')]]]), br,
     createObject([['tag', 'tr'], ['innerTags', [createLabel('Name','25px')]]]),
@@ -1171,7 +1180,10 @@ function getConnectPart()
   const connectPart = createObject([['tag','div'],['innerTags',[
     createObject([['tag', 'tr'], ['innerTags', [createLabel('PIN','25px')]]]),
     createObject([['tag', 'tr'], ['innerTags', [createInputField('pin')]]]),br,
-    createObject([['tag', 'tr'], ['innerTags', [createButton('Connect','connect','connectBtn')]]])
+    createObject([['tag', 'tr'], ['innerTags', [createButton('Connect','connect','connectBtn')]]]),br,br,
+    createObject([['tag', 'tr'], ['innerTags', [createUploadField('loadGame')]]]),
+    createObject([['tag', 'tr'], ['innerTags', [createButton('Load game', 'loadGame', 'loadBtn')]]]),br,
+    createObject([['tag', 'tr'], ['innerTags', [createButton('Save game', 'saveGame', 'saveBtn')]]])
   ]]]);
 
   return connectPart;
@@ -1186,12 +1198,9 @@ function createTable(id) {
 
 
   const otherPart = createObject([['tag', 'div'], ['id', 'otherPart'], ['innerTags', [
-    createObject([['tag', 'div'], ['id', 'connectPart'], ['innerTags', [getConnectPart()]]]),
+    createObject([['tag', 'div'], ['id', 'connectPart'], ['innerTags', [getConnectPart()]]]),br,br,
     createObject([['tag', 'tr'], ['innerTags', [createButton('Show leaderboard', 'showLeaderboard', 'leaderboardBtn')]]]), br,
     createObject([['tag', 'tr'], ['innerTags', [createButton('Show all games', 'showActiveGames', 'showGamesBtn')]]]), br,
-    createObject([['tag', 'tr'], ['innerTags', [createUploadField('loadGame')]]]), br,
-    createObject([['tag', 'tr'], ['innerTags', [createButton('Load game', 'loadGame', 'loadBtn')]]]), br,
-    createObject([['tag', 'tr'], ['innerTags', [createButton('Save game', 'saveGame', 'saveBtn')]]]), br
   ]]]);
 
 
@@ -1202,7 +1211,6 @@ function createTable(id) {
       ]]]),
       createObject([['tag', 'td'], ['width', '15']]),
       createObject([['tag', 'td'], ['valign', 'top'], ['align', 'left'], ['innerTags', [
-        //createObject([['tag', 'span'], ['id', 'errorLabel'], ['display', 'inline-block'], ['style', labelStyle]]),
         createButton('Turn on audio', 'changeAudioStatus', 'audioBtn'), br,
         createStatLabel('maxScoreLabel'), br,
         createStatLabel('maxLvlLabel'), br,
@@ -1224,7 +1232,6 @@ function createTable(id) {
       gamePart
   ]]])
 
-  console.log('ID '+id);
   return [menu,id]
 
 }

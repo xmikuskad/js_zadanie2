@@ -1,18 +1,28 @@
+/**
+ * housenka_client.js
+ * by Dominik Mikuska
+ */
+
 const url = 'ws://localhost:8082'
 const connection = new WebSocket(url)
 
+const ERROR = 'ERROR';
+const AREA_COMMAND = 'area';
+const IMAGE_COMMAND = 'img';
+const CONNECTED_COMMAND = 'CONNECTED';
 
-var isPlaying = false;
+var isPlaying = false; //false if game is paused otherwise true
 var playingAudio = false;
-var ready = false;
+var ready = false; //Is true after housenka is initalized
+var errorTimeout; //timeout checker for error label
 
 /**
- * Volania na server
+ * Websocket communication
  *
  */
 
 connection.onopen = () => {
-    console.log("OnOPEN");
+    //On connection request html UI
     getMenu();
 }
 connection.onerror = error => {
@@ -20,80 +30,115 @@ connection.onerror = error => {
 }
 connection.onmessage = e => {
     console.log(e.data);
-    var comm = e.data.split(" ");
+    const comm = e.data.split(" ");
 
-    if(comm[0] === 'img') {
+    //Used for getting plocha
+    if (ready && comm[0] === AREA_COMMAND) {
+        show_new_area(JSON.parse(comm[5]));
+        refreshLabels(comm);
+    }
+    //Used for getting images
+    else if (comm[0] === IMAGE_COMMAND) {
+        console.log("HELLO??");
         imagesName = JSON.parse(comm[2]);
         loadLabels();
         housenkaInit();
-        connection.send("READY "+comm[1]);
+        connection.send("READY " + comm[1]);
     }
-    else if(ready && comm[0] === 'area') {
-        console.log('got AREA');
-        show_new_area(JSON.parse(comm[5]));
-        refreshLabels(comm);
-    } else if(comm[0]==='CONNECTED') {
-        connection.send("GETIMG "+comm[1])
+    //Called once to establish connection of websocket and express
+    else if (comm[0] === CONNECTED_COMMAND) {
+        connection.send("GETIMG " + comm[1])
     }
 }
 
-window.onload = function() {
-};
 
+/**
+ * JQUERY requests
+ *
+ */
 
-/*var a = document.createElement('label');
-a.innerText = "hello";
-var b =  function() { setTimeout(()=>{a.innerText = 'after 2 seconds'},2000)};
-b();
-document.body.appendChild(a);*/
-
+//Get basic menu from server and load it
 function getMenu()
 {
-    var id;
     $.get('http://localhost:8080/getmenu',{}, function (data) {
-        console.log(data);
-        var obj = data[0];
-        console.log('ID is '+data[1]);
-        var div = document.getElementById('menu');
+        const div = document.getElementById('menu');
         if(div.childElementCount <=0)
-            div.appendChild(parseObject(obj));
+            div.appendChild(parseObject(data[0]));
         connection.send('CONNECT '+data[1]);
     });
 }
 
+//Log in user. Called after onlick login button
 function logIn()
 {
-    var emailField = document.getElementById('emailLogin');
-    var passwordField = document.getElementById('passwordLogin')
+    const emailField = document.getElementById('emailLogin');
+    const passwordField = document.getElementById('passwordLogin');
 
-    console.log("LOGGING IN!");
+    if(emailField.value.length <1)
+    {
+        showError('Please fill email first',5000);
+        return;
+    }
+
+    if(passwordField.value.length <1)
+    {
+        showError('Please fill password first',5000);
+        return;
+    }
 
     if(emailField && passwordField) {
         $.post('http://localhost:8080/login', {
             email: emailField.value,
             password: md5(passwordField.value)
         }, function (data) {
-            console.log(data);
-            if (data !== 'WRONG') {
-                console.log("Logged in!");
-                console.log(data);
+            if (data !== ERROR) {
                 changeUserPart(data);
-                //connection.send("GETIMG")
             } else {
-                console.log("Wrong combination of pass and email");
+                showError("Wrong combination of password and email",4000);
             }
         });
     }
 }
 
+//Register user. Called after onlick regisster button
 function register()
 {
-    var emailField = document.getElementById('emailRegistration');
-    var nameField = document.getElementById('nameRegistration');
-    var passwordField = document.getElementById('passwordRegistration')
+    const emailField = document.getElementById('emailRegistration');
+    const nameField = document.getElementById('nameRegistration');
+    const passwordField = document.getElementById('passwordRegistration');
 
+    //Email regex copied from https://emailregex.com/
+    const emailRegex = new RegExp('^(([^<>()\\[\\]\\\\.,;:\\s@"]+(\\.[^<>()\\[\\]\\\\.,;:\\s@"]+)*)|(".+"))@((\\[[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}])|(([a-zA-Z\\-0-9]+\\.)+[a-zA-Z]{2,}))$');
+    const nameRegex = new RegExp('^(?=.{5,20}$)[a-zA-Z]+$'); //5-20 characters, a-zA-Z chars allowed
+    const passwordRegex = new RegExp('^(?=.{5,20}$)[a-zA-Z*.!@$%^&(){}:;<>,?~_+-=|]+$'); // 5-20 chars, almost all special characters allowed
 
-    console.log("REGISTERING!");
+    //Field checking
+    if(nameField.value.length > 20 || nameField.value.length < 5)
+    {
+        showError('Name has to be between 5 and 20 characters long',5000);
+        return;
+    }
+    if(passwordField.value.length > 20 || passwordField.value.length < 5)
+    {
+        showError('Password has to be between 5 and 20 characters long',5000);
+        return;
+    }
+    if(!emailRegex.test(emailField.value))
+    {
+        showError('Invalid formatting of email!',5000);
+        return;
+    }
+    if(!nameRegex.test(nameField.value))
+    {
+        showError('Name can only contain a-z A-Z characters !',5000);
+        return;
+    }
+    if(!passwordRegex.test(passwordField.value))
+    {
+        showError('Password contains invalid characters. Allowed characters a-zA-Z*.!@$%^&(){};<>,.?~_+-=|',8000);
+        return;
+    }
+
 
     if(emailField && nameField && passwordField) {
         $.post('http://localhost:8080/register', {
@@ -102,16 +147,16 @@ function register()
             password: md5(passwordField.value)
         }, function (data) {
             if (data === "OK") {
-                console.log("Registered!");
+                showError("Registered!",2000);
             } else {
-                console.log("Name is in use");
+                showError("Account with this name or email is already registered",4000);
             }
         });
     }
 }
 
+//Pause game update. Called after onlick pause button
 function changeGameStatus() {
-    console.log("CHANGING GAME STATUS!");
     if(isPlaying)
     {
         $.post('http://localhost:8080/pause', {}, function (data) {
@@ -127,135 +172,126 @@ function changeGameStatus() {
     isPlaying = !isPlaying;
 }
 
+//Log out user. Called after onlick logout button
 function logout()
 {
-    //TODO check admin things and delete
     $.get('http://localhost:8080/logout', {
         email: undefined,
         name: undefined,
         password: undefined
     }, function (data) {
+
+        //Delete admin table after logout
+        const element = document.getElementById('adminTable');
+        if(element) {
+            document.body.removeChild(element);
+        }
+
+        //Show login and registration
         changeUserPart(data);
     });
 }
 
+//Download users info from server. Called after onlick save users button
 function saveUsers()
 {
     window.location = 'http://localhost:8080/saveusers';
 }
 
+//Upload users info to server. Called after onlick load users button
 function loadUsers()
 {
-    var data = document.getElementById('loadUsers');
+    const data = document.getElementById('loadUsers');
+
+    //Check if file is chosen
+    if(data.files.length <1)
+    {
+        showError('Choose file first!',5000);
+        return;
+    }
 
     var reader = new FileReader();
     reader.onload = function(event) {
-        console.log(event.target.result);
-
-        var a= event.target.result;
+        const a = event.target.result;
 
         $.post('http://localhost:8080/loadusers', {'obj':a}, function (data) {
             console.log('loaded!');
         });
-
-
     }
     reader.readAsText(data.files[0]);
 }
 
+//Upload game save to server. Called after onlick load game button
 function loadGame()
 {
-    var data = document.getElementById('loadGame');
+    const data = document.getElementById('loadGame');
+
+    //Check if file is chosen
+    if(data.files.length <1)
+    {
+        showError('Choose file first!',5000);
+        return;
+    }
 
     var reader = new FileReader();
     reader.onload = function(event) {
-        console.log(event.target.result);
+        const a = event.target.result;
 
-        var a= event.target.result;
-        var test = JSON.parse(event.target.result);
-
-        console.log(Object.keys(test));
-        console.log(test);
-        console.log(test.level);
-
-        $.post('http://localhost:8080/upload', {'obj':a}, function (data) {
-            console.log('loaded!');
-        });
-
-
+        $.post('http://localhost:8080/upload', {'obj':a});
     }
     reader.readAsText(data.files[0]);
 }
 
+//Download prompt for gamesave. Called after onlick save game button
 function saveGame()
 {
     window.location = 'http://localhost:8080/download';
 }
 
-function changeUserPart(newObj)
-{
-    var userDiv = document.getElementById('userPart');
-
-    while(userDiv.firstChild)
-        userDiv.removeChild(userDiv.lastChild);
-
-    userDiv.appendChild(parseObject(newObj));
-}
-
-function changeAudioStatus()
-{
-    console.log("Changing status!");
-
-    var audio = document.getElementById('audio');
-    var btn = document.getElementById('audioBtn');
-
-    if(playingAudio){
-        audio.pause();
-        btn.innerText = 'Turn on audio';
-    }
-    else
-    {
-        audio.play();
-        btn.innerText = 'Turn off audio';
-    }
-
-    playingAudio = !playingAudio;
-}
-
+//Show top 10 players in html table. Called after onlick show leaderboards button
 function showLeaderboard() {
-    var element = document.getElementById('leaderboard');
-    var btn = document.getElementById('leaderboardBtn');
+    const element = document.getElementById('leaderboard');
+    const btn = document.getElementById('leaderboardBtn');
+
+    //If leaderboard is open close it
     if(element){
         document.body.removeChild(element);
         btn.innerText='Show leaderboard';
     }
+    //If not then request it
     else
     {
         $.get('http://localhost:8080/leaderboard', {}, function (data) {
-            if(data!=='ERROR') {
-                var obj = parseObject(data);
-                console.log(data);
+            if(data!== ERROR) {
+                const obj = parseObject(data);
                 document.body.appendChild(obj);
                 btn.innerText = 'Hide leaderboard';
+            }
+            else
+            {
+                console.error("Error getting leaderboards!");
             }
         });
 
     }
 }
 
+//Show all active games. Called after onlick show all games button
 function showActiveGames() {
-    var element = document.getElementById('showActiveGames');
-    var btn = document.getElementById('showGamesBtn');
+    const element = document.getElementById('showActiveGames');
+    const btn = document.getElementById('showGamesBtn');
+
+    //If active games are shown close then
     if(element){
         document.body.removeChild(element);
         btn.innerText='Show all games';
     }
+    //If not request them
     else
     {
         $.get('http://localhost:8080/activegames', {}, function (data) {
-            if(data!=='ERROR') {
-                var obj = parseObject(data);
-                console.log(data);
+            if(data!== ERROR) {
+                const obj = parseObject(data);
                 document.body.appendChild(obj);
                 btn.innerText = 'Hide all games';
             }
@@ -264,20 +300,21 @@ function showActiveGames() {
     }
 }
 
-
+//Show all active users for admin. Called after onlick show users button
 function showUsers(){
-    var element = document.getElementById('adminTable');
-    var btn = document.getElementById('showUsersBtn');
+    const element = document.getElementById('adminTable');
+    const btn = document.getElementById('showUsersBtn');
 
+    //If table is shown then hide it
     if(element) {
         document.body.removeChild(element);
         btn.innerText='Show users';
     }
+    //If not then request it
     else {
         $.get('http://localhost:8080/showusers', {}, function (data) {
-            if(data !== 'ERROR') {
-                var obj = parseObject(data);
-                console.log(data);
+            if(data !== ERROR) {
+                const obj = parseObject(data);
                 document.body.appendChild(obj);
                 btn.innerText = 'Hide users';
             }
@@ -285,30 +322,39 @@ function showUsers(){
     }
 }
 
+//Start spectating player. Called after onlick watch game button in table
 function watchGame(event)
 {
-    //connect(event.target.id);
-    console.log('Watching game ' + event.target.id);
     connect(event.target.id);
 }
 
+//Start spectating player or controlling game. Called after onlick connect button
 function connect(pinInc)
 {
-    var watching,pin;
-    var startBtn= document.getElementById('statusBtn');
-    var place = document.getElementById('connectPart');
+    let watching, pin;
 
+    const startBtn = document.getElementById('statusBtn');
+    const place = document.getElementById('connectPart');
+
+    //pinInc is string if we are watching. If we want to control then it is object
     if(typeof(pinInc) === 'object') {
         watching = false;
-        var input =  document.getElementById('pin');
+        const input = document.getElementById('pin');
+        const regex = RegExp('^[0-9]{4}$');
+
+        //Check if pin is in right form
+        if(!regex.test(input.value))
+        {
+            showError('Please enter pin for connection in right form. Example: 0000',7000);
+            return;
+        }
+
         pin = input.value;
     }
     else {
         watching = true;
         pin = pinInc;
     }
-    console.log("CONNECTING TO "+pin);
-    console.log('WATCHING '+watching);
 
     $.post('http://localhost:8080/connect', {
         pin: pin,
@@ -320,24 +366,20 @@ function connect(pinInc)
             while (place.firstChild) {
                 place.removeChild(place.lastChild);
             }
-
             place.appendChild(parseObject(data));
         }
     });
 }
 
+//Stop spectating player or controlling game. Called after onlick disconnect button
 function disconnect()
 {
-    var place = document.getElementById('connectPart');
-    var startBtn= document.getElementById('statusBtn');
-    var onlyWatching = true;
-
-    if(place.childElementCount > 1)
-        onlyWatching = false;
+    const place = document.getElementById('connectPart');
+    const startBtn = document.getElementById('statusBtn');
 
     $.get('http://localhost:8080/disconnect', {}, function (data) {
         startBtn.style.display = null;
-        startBtn.innerText = 'Start new game'
+        startBtn.innerText = 'Start new game';
 
         while(place.firstChild)
         {
@@ -349,6 +391,7 @@ function disconnect()
 
 }
 
+//Send movement data if you are connected to game. Called after onlick up/left/right/down buttons
 function spectatorMove(event)
 {
     $.post('http://localhost:8080/up',{
@@ -357,27 +400,20 @@ function spectatorMove(event)
     }, function (data) {});
 }
 
-function todo(a){
-    console.log('ID is '+a.target.id);
-}
-
 /**
- * Spracovanie dat a interakcia s html
+ * Data processing and parsing of html elements
  *
  */
 var maxScore = 0;
 var score = 0;
-var maxLvl = 0;
-var lvl = 0;
-
+var maxLvl = 1;
+var lvl = 1;
 var maxScoreLabel,maxLvlLabel,lvlLabel,scoreLabel;
 
-//Dokopy pozliepate s nahradou md5 kniznice z https://dev.to/nedsoft/a-simple-password-hash-implementation-3hcg TODO zmazat
 // Tu je spomenute, ze kniznica je free to use https://stackoverflow.com/questions/1655769/fastest-md5-implementation-in-javascript
 //  A formatted version of a popular md5 implementation.
 //  Original copyright (c) Paul Johnston & Greg Holt.
 //  The function itself is now 42 lines long.
-
 function md5(inputString) {
     var hc="0123456789abcdef";
     function rh(n) {var j,s="";for(j=0;j<=3;j++) s+=hc.charAt((n>>(j*8+4))&0x0F)+hc.charAt((n>>(j*8))&0x0F);return s;}
@@ -421,27 +457,84 @@ function md5(inputString) {
     return rh(a)+rh(b)+rh(c)+rh(d);
 }
 
+//Clear login and registration and append logout with admin UI
+//Clear logout and append login and registration
+function changeUserPart(newObj)
+{
+    const userDiv = document.getElementById('userPart');
+
+    while(userDiv.firstChild)
+        userDiv.removeChild(userDiv.lastChild);
+
+    userDiv.appendChild(parseObject(newObj));
+}
+
+//Turn audio on/off. Called after onlick turn on audio button
+function changeAudioStatus()
+{
+    const audio = document.getElementById('audio');
+    const btn = document.getElementById('audioBtn');
+
+    if(playingAudio){
+        audio.pause();
+        btn.innerText = 'Turn on audio';
+    }
+    else
+    {
+        audio.play();
+        btn.innerText = 'Turn off audio';
+    }
+
+    playingAudio = !playingAudio;
+}
+
+//Show error label on the top for selected time
+function showError(text,time) {
+    const label = document.getElementById('errorLabel');
+    label.innerText = text;
+
+    if(errorTimeout)
+        clearTimeout(errorTimeout);
+    clearError(time);
+}
+function clearError(time)
+{
+    errorTimeout = setTimeout(()=>{
+        const label = document.getElementById('errorLabel');
+        label.innerText = '';
+    },time);
+}
+
+//Initialize labels variables
 function loadLabels()
 {
     maxScoreLabel = document.getElementById('maxScoreLabel');
-    maxScoreLabel.innerHTML = 'Max score is '+maxScore;
+    if(maxScoreLabel)
+        maxScoreLabel.innerHTML = 'Max score is '+maxScore;
+
     maxLvlLabel = document.getElementById('maxLvlLabel');
-    maxLvlLabel.innerHTML = 'Max lvl is '+maxLvl;
+    if(maxLvlLabel)
+        maxLvlLabel.innerHTML = 'Max lvl is '+maxLvl;
+
     scoreLabel = document.getElementById('scoreLabel');
-    scoreLabel.innerHTML = 'Act score is '+score;
+    if(scoreLabel)
+        scoreLabel.innerHTML = 'Act score is '+score;
+
     lvlLabel = document.getElementById('lvlLabel');
-    lvlLabel.innerHTML = 'Act lvl is '+lvl;
+    if(lvlLabel)
+        lvlLabel.innerHTML = 'Act lvl is '+lvl;
 }
 
+//Load new data into labels
 function refreshLabels(comm)
 {
-    //Posielame area maxScore actScore maxLvl actLvl plocha
-
+    //Comm contains: "area maxScore actScore maxLvl actLvl plocha" split by ' '
     maxScore = comm[1];
     score = comm[2];
     maxLvl = comm[3];
     lvl = comm[4];
 
+    //Dont update labels if -1
     if(maxScore < 0)
         return;
 
@@ -476,9 +569,10 @@ function refreshLabels(comm)
     }
 }
 
+//This function is parsing json to html object
 function parseObject(obj)
 {
-    var htmlObj = {};
+    let htmlObj = {};
     if(obj.tag)
     {
         htmlObj = document.createElement(obj.tag);
@@ -487,7 +581,7 @@ function parseObject(obj)
             switch (key)
             {
                 case 'innerTags':
-                    for (var i = 0; i < val.length; i++) {
+                    for (let i = 0; i < val.length; i++) {
                         htmlObj.appendChild(parseObject(val[i]))
                     }
                     break;
@@ -505,12 +599,11 @@ function parseObject(obj)
             }
         }
     }
-
     return htmlObj;
 }
 
 /***
- *  HOUSENKA START
+ *  HOUSENKA CLIENT CODE
  *
  */
 
@@ -534,28 +627,24 @@ Zdroj:https://pixabay.com/vectors/tiger-head-grin-cartoon-orange-308768/
 Licencia PIXABAY: https://pixabay.com/service/license/
 */
 
-var context; //Referencia na vykreslovanie
+var context; //Reference for canvas drawin
 var imagesName;
-var images = new Array('') //Sem sa ulozia nacitane img objekty
-
+var images = new Array('') //Loaded img objects
 var xsize = 41;
-var plocha = new Array();
 
 
 //Load canvas
 function housenkaInit() {
-    //Schovanie tabulky
     document.defaultAction = false;
-
 
     var canvas = document.getElementById('canvas');
     context = canvas.getContext("2d");
 
-    //Nacitanie obrazkov do pola
+    //Load images to array
     loadResources()
 }
 
-//Rekurzia, ktora nacita obrazky a nasledne zacne hru
+//Load all images and then start game
 function loadResources(){
     if(images.length <7)
     {
@@ -568,23 +657,22 @@ function loadResources(){
     }
     else
     {
-        startHry();
+        startGame();
     }
 }
 
-function nastavBarvu(pozice, barva) {
-    plocha[pozice] = barva;
-
-    if(barva ==0)
+//Set color in canvas
+function setColor(position, color) {
+    if(color ===0)
     {
-        context.fillRect((pozice%xsize)*48, Math.floor(pozice/xsize)*48,48,48);
+        context.fillRect((position%xsize)*48, Math.floor(position/xsize)*48,48,48);
         context.fillStyle = "#e0e0e0";
         return;
     }
-    context.drawImage(images[barva],(pozice%xsize)*48, Math.floor(pozice/xsize)*48,48,48);
+    context.drawImage(images[color],(position%xsize)*48, Math.floor(position/xsize)*48,48,48);
 }
 
-function startHry () {
+function startGame () {
     document['onkeydown'] = send_keypress;
     document['onkeyup'] = send_keylift;
     ready = true;
@@ -592,28 +680,27 @@ function startHry () {
 
 function show_new_area(area)
 {
-    var same = true;
     for(var i=0;i<area.length;i++) {
-        nastavBarvu(i, area[i]);
+        setColor(i, area[i]);
     }
 }
 
 function send_keypress(e)
 {
-    var udalost = e || window.event;
+    var event = e || window.event;
 
     $.post('http://localhost:8080/down',{
-        code: udalost.keyCode,
+        code: event.keyCode,
         owner: true
-    }, function (data) {});
+    });
 }
 
 function send_keylift(e)
 {
-    var udalost = e || window.event;
+    var event = e || window.event;
 
     $.post('http://localhost:8080/up',{
-        code: udalost.keyCode,
+        code: event.keyCode,
         owner: true
-    }, function (data) {});
+    });
 }
